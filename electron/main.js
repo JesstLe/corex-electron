@@ -89,21 +89,18 @@ ipcMain.handle('get-cpu-info', () => {
 ipcMain.handle('get-processes', async () => {
   return new Promise((resolve, reject) => {
     const isWin = process.platform === 'win32';
-    // Mac: ps -ax -o pid,comm
-    // Win: tasklist
-    const cmd = isWin
-      ? 'tasklist /FO CSV /NH'
-      : 'ps -ax -o pid,comm';
 
-    exec(cmd, { timeout: 10000 }, (error, stdout, stderr) => {
+    // Windows: 使用 WMIC 获取进程和 CPU 使用率
+    // macOS: 使用 ps 命令获取进程和 CPU 使用率
+    const cmd = isWin
+      ? 'wmic path Win32_PerfFormattedData_PerfProc_Process get Name,IDProcess,PercentProcessorTime /FORMAT:CSV'
+      : 'ps -ax -o pid,%cpu,comm';
+
+    exec(cmd, { timeout: 15000 }, (error, stdout, stderr) => {
       if (error) {
         console.error(`进程扫描错误: ${error.message}`);
         reject(new Error(`进程扫描失败: ${error.message}`));
         return;
-      }
-
-      if (stderr && stderr.trim()) {
-        console.warn('进程扫描警告:', stderr);
       }
 
       try {
@@ -111,36 +108,48 @@ ipcMain.handle('get-processes', async () => {
         const lines = stdout.split('\n');
 
         if (isWin) {
+          // WMIC CSV 格式: Node,IDProcess,Name,PercentProcessorTime
           lines.forEach(line => {
-            if (!line.trim()) return;
-            const parts = line.split('","');
-            if (parts.length > 1) {
-              const name = parts[0].replace('"', '').trim();
-              const pidStr = parts[1].replace('"', '').trim();
-              const pid = parseInt(pidStr, 10);
-              if (name && !isNaN(pid) && pid > 0) {
-                processes.push({ pid, name });
+            if (!line.trim() || line.includes('Node,') || line.includes('IDProcess')) return;
+            const parts = line.split(',');
+            if (parts.length >= 4) {
+              const pid = parseInt(parts[1].trim(), 10);
+              let name = parts[2].trim();
+              const cpu = parseFloat(parts[3].trim()) || 0;
+
+              // 过滤掉系统进程和空名称
+              if (!name || name === '_Total' || name === 'Idle' || isNaN(pid) || pid <= 0) return;
+
+              // 添加 .exe 后缀（如果没有）
+              if (!name.toLowerCase().endsWith('.exe')) {
+                name = name + '.exe';
               }
+
+              processes.push({ pid, name, cpu });
             }
           });
         } else {
+          // macOS ps 格式: PID %CPU COMMAND
           lines.forEach(line => {
             const trimmed = line.trim();
-            if (!trimmed || trimmed.includes('PID COMMAND')) return;
-            const spaceIdx = trimmed.indexOf(' ');
-            if (spaceIdx > 0) {
-              const pidStr = trimmed.substring(0, spaceIdx);
-              const name = trimmed.substring(spaceIdx + 1);
-              const pid = parseInt(pidStr, 10);
+            if (!trimmed || trimmed.includes('PID') || trimmed.includes('%CPU')) return;
+
+            const match = trimmed.match(/^\s*(\d+)\s+([\d.]+)\s+(.+)/);
+            if (match) {
+              const pid = parseInt(match[1], 10);
+              const cpu = parseFloat(match[2]) || 0;
+              const name = path.basename(match[3].trim());
+
               if (name && !isNaN(pid) && pid > 0) {
-                const shortName = path.basename(name);
-                processes.push({ pid, name: shortName });
+                processes.push({ pid, name, cpu });
               }
             }
           });
         }
 
-        processes.sort((a, b) => a.name.localeCompare(b.name));
+        // 按 CPU 使用率降序排列
+        processes.sort((a, b) => b.cpu - a.cpu);
+
         resolve(processes);
       } catch (parseError) {
         console.error('解析进程列表失败:', parseError);
@@ -228,7 +237,7 @@ ipcMain.handle('set-affinity', (event, pid, coreMask, mode = 'dynamic') => {
     // 验证 PID 和 finalMask 都是安全的数字
     const safePid = Math.floor(pid);
     const safeMask = finalMask.toString();
-    
+
     // 验证 finalMask 是有效的数字字符串
     if (!/^\d+$/.test(safeMask)) {
       return Promise.resolve({ success: false, error: '核心掩码格式无效' });
@@ -242,8 +251,8 @@ ipcMain.handle('set-affinity', (event, pid, coreMask, mode = 'dynamic') => {
         if (error) {
           console.error('设置亲和性失败:', error.message);
           // 尝试从 stderr 提取更详细的错误信息
-          const errorMsg = stderr && stderr.trim() 
-            ? stderr.trim().split('\n').pop() 
+          const errorMsg = stderr && stderr.trim()
+            ? stderr.trim().split('\n').pop()
             : error.message;
           resolve({ success: false, error: errorMsg || '设置失败，请检查进程是否存在或权限是否足够' });
         } else {

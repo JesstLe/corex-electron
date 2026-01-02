@@ -1,100 +1,133 @@
 import React, { useState, useMemo } from 'react';
-import { Search, RefreshCw, Activity, Layers } from 'lucide-react';
+import { Search, RefreshCw, ChevronDown, Flame } from 'lucide-react';
 
 export default function ProcessScanner({ processes, selectedPid, onSelect, onScan, scanning }) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
 
   const filteredProcesses = useMemo(() => {
     if (!searchTerm) return processes;
     const term = searchTerm.toLowerCase();
-    return processes.filter(p => 
-      p.name.toLowerCase().includes(term) || 
+    return processes.filter(p =>
+      p.name.toLowerCase().includes(term) ||
       p.pid.toString().includes(term)
     );
   }, [processes, searchTerm]);
 
-  return (
-    <div className="flex flex-col h-full bg-slate-900/50 border-r border-white/5">
-      {/* Sidebar Header */}
-      <div className="p-6 pb-4">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-8 h-8 rounded-lg bg-cyan-500/10 flex items-center justify-center text-cyan-400">
-            <Layers size={20} />
-          </div>
-          <h2 className="text-xl font-bold text-white tracking-tight">CoreX</h2>
-        </div>
+  const selectedProcess = processes.find(p => p.pid === selectedPid);
 
-        <div className="relative group">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 group-focus-within:text-cyan-400 transition-colors" size={16} />
-          <input
-            type="text"
-            placeholder="搜索进程..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-slate-950/50 border border-white/5 text-sm rounded-xl pl-10 pr-4 py-2.5 outline-none focus:ring-1 focus:ring-cyan-500/50 focus:border-cyan-500/30 text-slate-300 placeholder:text-slate-600 transition-all"
-          />
-        </div>
+  // CPU 使用率颜色
+  const getCpuColor = (cpu) => {
+    if (cpu >= 50) return 'text-red-500 bg-red-50';
+    if (cpu >= 20) return 'text-orange-500 bg-orange-50';
+    if (cpu >= 5) return 'text-yellow-600 bg-yellow-50';
+    return 'text-slate-400 bg-slate-50';
+  };
+
+  return (
+    <div className="glass rounded-2xl p-5 shadow-soft">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-slate-700">目标程序</h3>
+        <button
+          onClick={onScan}
+          disabled={scanning}
+          className={`p-2 rounded-xl transition-all ${scanning
+              ? 'bg-violet-100 text-violet-500'
+              : 'hover:bg-slate-100 text-slate-400 hover:text-slate-600'
+            }`}
+        >
+          <RefreshCw size={16} className={scanning ? 'animate-spin' : ''} />
+        </button>
       </div>
 
-      {/* Process List */}
-      <div className="flex-1 overflow-y-auto px-3 pb-3 space-y-1">
-        <div className="flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-500 uppercase tracking-wider">
-          <span>进程列表</span>
-          <button 
-            onClick={onScan}
-            disabled={scanning}
-            className={`p-1.5 rounded-lg hover:bg-white/5 transition-colors ${scanning ? 'animate-spin text-cyan-400' : 'text-slate-500 hover:text-white'}`}
-          >
-            <RefreshCw size={14} />
-          </button>
-        </div>
-
-        {filteredProcesses.length === 0 ? (
-          <div className="text-center py-12 px-4">
-            <p className="text-slate-600 text-sm">未找到进程</p>
-            {processes.length === 0 && (
-              <button 
-                onClick={onScan}
-                className="mt-4 text-xs text-cyan-500 hover:text-cyan-400 font-medium"
-              >
-                点击扫描
-              </button>
+      {/* 搜索和选择 */}
+      <div className="relative">
+        <div
+          onClick={() => setIsOpen(!isOpen)}
+          className="flex items-center gap-3 p-3 bg-slate-50 hover:bg-slate-100 rounded-xl cursor-pointer transition-colors border border-slate-200"
+        >
+          <Search size={16} className="text-slate-400" />
+          <div className="flex-1 min-w-0">
+            {selectedProcess ? (
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-slate-700 truncate">{selectedProcess.name}</span>
+                {selectedProcess.cpu !== undefined && (
+                  <span className={`text-xs px-1.5 py-0.5 rounded ${getCpuColor(selectedProcess.cpu)}`}>
+                    {selectedProcess.cpu.toFixed(1)}%
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="text-slate-400">选择程序...</div>
             )}
           </div>
-        ) : (
-          filteredProcesses.map((process) => {
-            const isSelected = selectedPid === process.pid;
-            return (
-              <button
-                key={process.pid}
-                onClick={() => onSelect(process.pid)}
-                className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group text-left relative overflow-hidden ${
-                  isSelected 
-                    ? 'bg-cyan-500/10 text-cyan-400 ring-1 ring-cyan-500/30 shadow-[0_0_20px_rgba(6,182,212,0.1)]' 
-                    : 'hover:bg-white/5 text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                {isSelected && (
-                  <div className="absolute left-0 top-0 bottom-0 w-1 bg-cyan-500 shadow-[0_0_10px_#06b6d4]"></div>
-                )}
-                
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${
-                  isSelected ? 'bg-cyan-500/20 text-cyan-300' : 'bg-slate-800 text-slate-600 group-hover:bg-slate-700 group-hover:text-slate-400'
-                }`}>
-                  <Activity size={16} />
-                </div>
-                
-                <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm truncate">{process.name}</div>
-                  <div className={`text-xs truncate transition-colors ${isSelected ? 'text-cyan-500/60' : 'text-slate-600'}`}>
-                    PID: {process.pid}
+          <ChevronDown size={16} className={`text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+        </div>
+
+        {isOpen && (
+          <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-lg border border-slate-200 overflow-hidden z-50 max-h-72 overflow-y-auto">
+            {/* 搜索框 */}
+            <div className="p-2 border-b border-slate-100 sticky top-0 bg-white">
+              <input
+                type="text"
+                placeholder="查找程序..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-50 rounded-lg text-sm outline-none focus:ring-2 focus:ring-violet-500/20"
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+
+            {/* 进程列表 */}
+            {filteredProcesses.length === 0 ? (
+              <div className="p-8 text-center text-slate-400 text-sm">
+                {processes.length === 0 ? '点击刷新按钮扫描进程' : '未找到匹配的程序'}
+              </div>
+            ) : (
+              filteredProcesses.map((process) => (
+                <button
+                  key={process.pid}
+                  onClick={() => {
+                    onSelect(process.pid);
+                    setIsOpen(false);
+                    setSearchTerm('');
+                  }}
+                  className={`w-full px-4 py-3 text-left hover:bg-violet-50 transition-colors flex items-center justify-between group ${selectedPid === process.pid ? 'bg-violet-50' : ''
+                    }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0 flex-1">
+                    {process.cpu >= 10 && (
+                      <Flame size={14} className="text-orange-500 flex-shrink-0" />
+                    )}
+                    <span className={`font-medium truncate ${selectedPid === process.pid ? 'text-violet-600' : 'text-slate-600'}`}>
+                      {process.name}
+                    </span>
                   </div>
-                </div>
-              </button>
-            );
-          })
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    {process.cpu !== undefined && (
+                      <span className={`text-xs px-2 py-0.5 rounded font-medium ${getCpuColor(process.cpu)}`}>
+                        {process.cpu.toFixed(1)}%
+                      </span>
+                    )}
+                    <span className="text-xs text-slate-400">PID {process.pid}</span>
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
         )}
       </div>
+
+      {/* 已选状态 */}
+      {selectedProcess && (
+        <div className="mt-3 flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-green-500"></div>
+          <span className="text-xs text-slate-500">已选择 · PID {selectedProcess.pid}</span>
+          {selectedProcess.cpu !== undefined && (
+            <span className="text-xs text-slate-400">· CPU {selectedProcess.cpu.toFixed(1)}%</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

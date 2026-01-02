@@ -1,8 +1,6 @@
 {
-  "name": "corex-electron",
-  "version": "2.0.0",
-  "description": "CoreX CPU Optimizer for Windows",
-  "author": "CoreX Team",
+  "name": "task-nexus",
+  "version": "1.0.0",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -12,8 +10,8 @@
     "dist": "npm run build && electron-builder"
   },
   "build": {
-    "appId": "com.corex.app.2026",
-    "productName": "CoreX",
+    "appId": "com.tasknexus.app",
+    "productName": "Task Nexus",
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -34,7 +32,7 @@
       ]
     },
     "portable": {
-      "artifactName": "${productName}-${version}-便携版.${ext}"
+      "artifactName": "${productName}-${version}-Portable.${ext}"
     },
     "mac": {
       "target": "dmg"

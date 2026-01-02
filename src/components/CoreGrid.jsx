@@ -1,70 +1,153 @@
 import React from 'react';
-import { Cpu, Zap, Lock, BarChart2, Leaf } from 'lucide-react';
+import { Cpu } from 'lucide-react';
 
-export default function CoreGrid({ cores, selectedCores, onToggleCore, onSelectAll, onSelectNone, onSelectPhysical, onSelectSMT }) {
+export default function CoreGrid({
+  cores,
+  selectedCores,
+  onToggleCore,
+  onSelectAll,
+  onSelectNone,
+  onSelectPhysical,
+  onSelectSMT,
+  ccdConfig,
+  onSelectCcd0,
+  onSelectCcd1
+}) {
+  const isDualCcd = ccdConfig?.isDualCcd;
+  const halfCores = Math.floor(cores.length / 2);
+
   return (
-    <div className="bg-slate-900/50 rounded-2xl border border-white/5 p-6 backdrop-blur-sm">
-      <div className="flex items-center justify-between mb-6">
-        <h3 className="text-lg font-bold text-white flex items-center gap-2">
-          <Cpu className="text-cyan-400" size={20} />
-          CPU 核心拓扑
-        </h3>
-        
-        <div className="flex gap-2">
-           <button onClick={onSelectAll} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">全选</button>
-           <button onClick={onSelectPhysical} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">仅物理核心</button>
-           <button onClick={onSelectSMT} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">仅超线程</button>
-           <button onClick={onSelectNone} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">清空</button>
+    <div className="glass rounded-2xl p-6 shadow-soft">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center">
+            <Cpu size={20} className="text-white" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-slate-700">处理器调度中心</h3>
+            <p className="text-xs text-slate-400">
+              {cores.length} 个逻辑核心
+              {isDualCcd && ` · 双CCD架构`}
+              {ccdConfig?.has3DCache && ` · 3D V-Cache`}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex gap-2 flex-wrap justify-end">
+          {/* CCD 选择按钮（仅双CCD处理器显示） */}
+          {isDualCcd && (
+            <>
+              <button
+                onClick={onSelectCcd0}
+                className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+              >
+                CCD0
+              </button>
+              <button
+                onClick={onSelectCcd1}
+                className="px-3 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200"
+              >
+                CCD1
+              </button>
+              <div className="w-px h-6 bg-slate-200 mx-1"></div>
+            </>
+          )}
+          <button onClick={onSelectAll} className="px-3 py-1.5 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors">全选</button>
+          <button onClick={onSelectPhysical} className="px-3 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">物理核</button>
+          <button onClick={onSelectSMT} className="px-3 py-1.5 text-xs font-medium text-slate-500 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors">超线程</button>
+          <button onClick={onSelectNone} className="px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-100 rounded-lg transition-colors">清空</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3">
-        {cores.map((coreIndex) => {
-          const isSelected = selectedCores.includes(coreIndex);
-          const isPhysical = coreIndex % 2 === 0;
-          
-          return (
-            <button
-              key={coreIndex}
-              onClick={() => onToggleCore(coreIndex)}
-              className={`relative group aspect-square rounded-xl flex flex-col items-center justify-center transition-all duration-300 ${
-                isSelected 
-                  ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]' 
-                  : 'bg-slate-800/30 border-white/5 hover:bg-slate-800 hover:border-white/10'
-              } border`}
-            >
-              <div className={`text-xs font-bold mb-1 transition-colors ${
-                isSelected ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'
-              }`}>
-                #{coreIndex}
-              </div>
-              
-              {/* Core Visual */}
-              <div className={`w-8 h-1 rounded-full transition-all duration-300 ${
-                isSelected 
-                  ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee] w-6' 
-                  : 'bg-slate-700 w-2 group-hover:w-4 group-hover:bg-slate-600'
-              }`}></div>
-              
-              {/* Type Indicator */}
-              <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full">
-                 <div className={`${isPhysical ? 'bg-blue-500' : 'bg-purple-500'} w-full h-full rounded-full opacity-50`}></div>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-      
-      <div className="flex items-center gap-4 mt-4 text-xs text-slate-500 justify-end">
+      {/* CCD 分区显示 */}
+      {isDualCcd ? (
+        <div className="space-y-4">
+          {/* CCD0 */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+              <span className="text-xs font-medium text-blue-600">CCD0</span>
+              <span className="text-xs text-slate-400">· 核心 0-{halfCores - 1}</span>
+            </div>
+            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+              {cores.slice(0, halfCores).map((coreIndex) => renderCoreButton(coreIndex, 'ccd0'))}
+            </div>
+          </div>
+
+          {/* CCD1 */}
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+              <span className="text-xs font-medium text-purple-600">CCD1</span>
+              <span className="text-xs text-slate-400">· 核心 {halfCores}-{cores.length - 1}</span>
+            </div>
+            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+              {cores.slice(halfCores).map((coreIndex) => renderCoreButton(coreIndex, 'ccd1'))}
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+          {cores.map((coreIndex) => renderCoreButton(coreIndex, null))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-4 mt-4 text-xs text-slate-400">
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-blue-500/50"></div>
-          物理核心
+          <span className="font-medium text-violet-500">{selectedCores.length}</span> 核心已选
+        </div>
+        <div className="w-px h-3 bg-slate-200"></div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded bg-violet-500"></div>
+          <span>P = 物理核心</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded-full bg-purple-500/50"></div>
-          超线程
+          <div className="w-2 h-2 rounded bg-pink-400"></div>
+          <span>E = 超线程</span>
         </div>
+        {isDualCcd && (
+          <>
+            <div className="w-px h-3 bg-slate-200"></div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded bg-blue-500"></div>
+              <span>CCD0</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2 h-2 rounded bg-purple-500"></div>
+              <span>CCD1</span>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
+
+  function renderCoreButton(coreIndex, ccdType) {
+    const isSelected = selectedCores.includes(coreIndex);
+    const isPhysical = coreIndex % 2 === 0;
+
+    // CCD 专属颜色
+    let selectedBg = 'bg-gradient-to-br from-violet-500 to-pink-500';
+    if (ccdType === 'ccd0' && isSelected) {
+      selectedBg = 'bg-gradient-to-br from-blue-500 to-cyan-500';
+    } else if (ccdType === 'ccd1' && isSelected) {
+      selectedBg = 'bg-gradient-to-br from-purple-500 to-pink-500';
+    }
+
+    return (
+      <button
+        key={coreIndex}
+        onClick={() => onToggleCore(coreIndex)}
+        className={`relative aspect-square rounded-xl flex flex-col items-center justify-center transition-all duration-200 ${isSelected
+            ? `${selectedBg} text-white shadow-glow scale-105`
+            : 'bg-slate-50 hover:bg-slate-100 text-slate-500 border border-slate-200'
+          }`}
+      >
+        <span className="text-sm font-bold">{coreIndex}</span>
+        <span className={`text-[10px] mt-0.5 ${isSelected ? 'text-white/70' : 'text-slate-400'}`}>
+          {isPhysical ? 'P' : 'E'}
+        </span>
+      </button>
+    );
+  }
 }
