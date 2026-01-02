@@ -3,7 +3,7 @@ const path = require('path');
 const os = require('os');
 const { exec } = require('child_process');
 
-let mainWindow;
+let mainWindow = null;
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
@@ -41,34 +41,49 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
+    mainWindow = null;
     app.quit();
   }
+});
+
+// 清理窗口引用
+app.on('before-quit', () => {
+  mainWindow = null;
 });
 
 // --- IPC Handlers ---
 
 ipcMain.handle('get-cpu-info', () => {
-  const cpus = os.cpus();
-  // Simplify model name
-  let model = cpus[0].model.trim();
+  try {
+    const cpus = os.cpus();
+    if (!cpus || cpus.length === 0) {
+      throw new Error('无法检测到 CPU 信息');
+    }
 
-  // Clean up CPU name (remove trademarks, frequency, redundant text)
-  model = model
-    .replace(/\(R\)/gi, '')
-    .replace(/\(TM\)/gi, '')
-    .replace(/\s+CPU\s+/gi, ' ')
-    .replace(/\d+-Core Processor/gi, '')
-    .replace(/-?Core\s+Processor/gi, ' ')
-    .replace(/\s+Processor\s+/gi, ' ')
-    .replace(/@.*/, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+    // Simplify model name
+    let model = cpus[0].model.trim();
 
-  return {
-    model: model,
-    cores: cpus.length,
-    speed: cpus[0].speed
-  };
+    // Clean up CPU name (remove trademarks, frequency, redundant text)
+    model = model
+      .replace(/\(R\)/gi, '')
+      .replace(/\(TM\)/gi, '')
+      .replace(/\s+CPU\s+/gi, ' ')
+      .replace(/\d+-Core Processor/gi, '')
+      .replace(/-?Core\s+Processor/gi, ' ')
+      .replace(/\s+Processor\s+/gi, ' ')
+      .replace(/@.*/, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return {
+      model: model,
+      cores: cpus.length,
+      speed: cpus[0].speed
+    };
+  } catch (error) {
+    console.error('获取 CPU 信息失败:', error);
+    throw new Error(`获取 CPU 信息失败: ${error.message}`);
+  }
 });
 
 ipcMain.handle('get-processes', async () => {
@@ -80,58 +95,94 @@ ipcMain.handle('get-processes', async () => {
       ? 'tasklist /FO CSV /NH'
       : 'ps -ax -o pid,comm';
 
-    exec(cmd, (error, stdout, stderr) => {
+    exec(cmd, { timeout: 10000 }, (error, stdout, stderr) => {
       if (error) {
-        console.error(`exec error: ${error}`);
-        resolve([]);
+        console.error(`进程扫描错误: ${error.message}`);
+        reject(new Error(`进程扫描失败: ${error.message}`));
         return;
       }
 
-      const processes = [];
-      const lines = stdout.split('\n');
-
-      if (isWin) {
-        lines.forEach(line => {
-          if (!line.trim()) return;
-          const parts = line.split('","');
-          if (parts.length > 1) {
-            const name = parts[0].replace('"', '');
-            const pid = parts[1].replace('"', '');
-            processes.push({ pid: parseInt(pid), name });
-          }
-        });
-      } else {
-        lines.forEach(line => {
-          const trimmed = line.trim();
-          if (!trimmed || trimmed.includes('PID COMMAND')) return;
-          const spaceIdx = trimmed.indexOf(' ');
-          if (spaceIdx > 0) {
-            const pid = trimmed.substring(0, spaceIdx);
-            const name = trimmed.substring(spaceIdx + 1);
-            const shortName = path.basename(name); // Use basename for cleaner UI
-            processes.push({ pid: parseInt(pid), name: shortName });
-          }
-        });
+      if (stderr && stderr.trim()) {
+        console.warn('进程扫描警告:', stderr);
       }
 
-      processes.sort((a, b) => a.name.localeCompare(b.name));
-      resolve(processes);
+      try {
+        const processes = [];
+        const lines = stdout.split('\n');
+
+        if (isWin) {
+          lines.forEach(line => {
+            if (!line.trim()) return;
+            const parts = line.split('","');
+            if (parts.length > 1) {
+              const name = parts[0].replace('"', '').trim();
+              const pidStr = parts[1].replace('"', '').trim();
+              const pid = parseInt(pidStr, 10);
+              if (name && !isNaN(pid) && pid > 0) {
+                processes.push({ pid, name });
+              }
+            }
+          });
+        } else {
+          lines.forEach(line => {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.includes('PID COMMAND')) return;
+            const spaceIdx = trimmed.indexOf(' ');
+            if (spaceIdx > 0) {
+              const pidStr = trimmed.substring(0, spaceIdx);
+              const name = trimmed.substring(spaceIdx + 1);
+              const pid = parseInt(pidStr, 10);
+              if (name && !isNaN(pid) && pid > 0) {
+                const shortName = path.basename(name);
+                processes.push({ pid, name: shortName });
+              }
+            }
+          });
+        }
+
+        processes.sort((a, b) => a.name.localeCompare(b.name));
+        resolve(processes);
+      } catch (parseError) {
+        console.error('解析进程列表失败:', parseError);
+        reject(new Error(`解析进程列表失败: ${parseError.message}`));
+      }
     });
   });
 });
 
 ipcMain.handle('set-affinity', (event, pid, coreMask, mode = 'dynamic') => {
+  // 输入验证
+  if (!Number.isInteger(pid) || pid <= 0) {
+    return Promise.resolve({ success: false, error: '无效的进程 ID' });
+  }
+
+  // 验证 coreMask
+  let mask;
+  try {
+    mask = BigInt(coreMask);
+    if (mask <= 0n) {
+      return Promise.resolve({ success: false, error: '无效的核心掩码' });
+    }
+  } catch (error) {
+    return Promise.resolve({ success: false, error: '核心掩码格式错误' });
+  }
+
+  // 验证模式
+  const validModes = ['dynamic', 'static', 'd2', 'd3'];
+  if (!validModes.includes(mode)) {
+    return Promise.resolve({ success: false, error: '无效的绑定模式' });
+  }
+
   const isWin = process.platform === 'win32';
 
   if (isWin) {
     let priorityClass = 'Normal';
-    let finalMask = BigInt(coreMask);
+    let finalMask = mask;
 
     // Apply Mode Logic
     if (mode === 'static') {
       priorityClass = 'High';
       // For Static: Use only the first selected core (lowest bit set)
-      // (Simplified: just finding the lowest bit)
       const mask = BigInt(coreMask);
       let lowestBit = 0n;
       for (let i = 0n; i < 64n; i++) {
@@ -173,22 +224,36 @@ ipcMain.handle('set-affinity', (event, pid, coreMask, mode = 'dynamic') => {
       if (highestBit !== 0n) finalMask = highestBit;
     }
 
-    const cmd = `powershell -Command "$Process = Get-Process -Id ${pid}; $Process.ProcessorAffinity = ${finalMask.toString()}; $Process.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::${priorityClass}"`;
-    console.log(`Executing [${mode}]: ${cmd}`);
+    // 使用参数化命令，防止命令注入
+    // 验证 PID 和 finalMask 都是安全的数字
+    const safePid = Math.floor(pid);
+    const safeMask = finalMask.toString();
+    
+    // 验证 finalMask 是有效的数字字符串
+    if (!/^\d+$/.test(safeMask)) {
+      return Promise.resolve({ success: false, error: '核心掩码格式无效' });
+    }
+
+    const cmd = `powershell -Command "try { $Process = Get-Process -Id ${safePid} -ErrorAction Stop; $Process.ProcessorAffinity = ${safeMask}; $Process.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::${priorityClass}; Write-Output 'Success' } catch { Write-Error $_.Exception.Message; exit 1 }"`;
+    console.log(`执行 [${mode}]: PID=${safePid}, Mask=${safeMask}`);
 
     return new Promise((resolve) => {
-      exec(cmd, (error) => {
+      exec(cmd, { timeout: 5000 }, (error, stdout, stderr) => {
         if (error) {
-          console.error('Affinity Error:', error);
-          resolve({ success: false, error: error.message });
+          console.error('设置亲和性失败:', error.message);
+          // 尝试从 stderr 提取更详细的错误信息
+          const errorMsg = stderr && stderr.trim() 
+            ? stderr.trim().split('\n').pop() 
+            : error.message;
+          resolve({ success: false, error: errorMsg || '设置失败，请检查进程是否存在或权限是否足够' });
         } else {
           resolve({ success: true });
         }
       });
     });
   } else {
-    console.log(`[Simulation] Mode: ${mode}, PID: ${pid}, Mask: ${coreMask}`);
-    return Promise.resolve({ success: true, message: "Simulated on macOS" });
+    console.log(`[模拟模式] Mode: ${mode}, PID: ${pid}, Mask: ${coreMask}`);
+    return Promise.resolve({ success: true, message: "在 macOS 上模拟执行" });
   }
 });
 
