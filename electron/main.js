@@ -54,7 +54,20 @@ app.on('window-all-closed', () => {
 ipcMain.handle('get-cpu-info', () => {
   const cpus = os.cpus();
   // Simplify model name
-  const model = cpus[0].model.trim();
+  let model = cpus[0].model.trim();
+  
+  // Clean up CPU name (remove trademarks, frequency, redundant text)
+  model = model
+    .replace(/\(R\)/gi, '')
+    .replace(/\(TM\)/gi, '')
+    .replace(/\s+CPU\s+/gi, ' ')
+    .replace(/\d+-Core Processor/gi, '')
+    .replace(/-?Core\s+Processor/gi, ' ')
+    .replace(/\s+Processor\s+/gi, ' ')
+    .replace(/@.*/, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
   return {
     model: model,
     cores: cpus.length,
@@ -111,12 +124,61 @@ ipcMain.handle('get-processes', async () => {
   });
 });
 
-ipcMain.handle('set-affinity', (event, { pid, coreMask }) => {
+ipcMain.handle('set-affinity', (event, pid, coreMask, mode = 'dynamic') => {
   const isWin = process.platform === 'win32';
   
   if (isWin) {
-    const cmd = `powershell -Command "$Process = Get-Process -Id ${pid}; $Process.ProcessorAffinity = ${coreMask}"`;
-    console.log(`Executing: ${cmd}`);
+    let priorityClass = 'Normal';
+    let finalMask = BigInt(coreMask);
+
+    // Apply Mode Logic
+    if (mode === 'static') {
+      priorityClass = 'High';
+      // For Static: Use only the first selected core (lowest bit set)
+      // (Simplified: just finding the lowest bit)
+      const mask = BigInt(coreMask);
+      let lowestBit = 0n;
+      for (let i = 0n; i < 64n; i++) {
+         if ((mask & (1n << i)) !== 0n) {
+             lowestBit = (1n << i);
+             break;
+         }
+      }
+      if (lowestBit !== 0n) finalMask = lowestBit;
+    } 
+    else if (mode === 'd2') {
+      priorityClass = 'BelowNormal';
+      // For D2: Use latter half of selected cores
+      const mask = BigInt(coreMask);
+      const selectedIndices = [];
+      for (let i = 0; i < 64; i++) {
+        if ((mask & (1n << BigInt(i))) !== 0n) selectedIndices.push(i);
+      }
+      
+      if (selectedIndices.length > 1) {
+        const mid = Math.floor(selectedIndices.length / 2);
+        const secondHalf = selectedIndices.slice(mid);
+        let newMask = 0n;
+        secondHalf.forEach(idx => newMask |= (1n << BigInt(idx)));
+        finalMask = newMask;
+      }
+    } 
+    else if (mode === 'd3') {
+      priorityClass = 'Idle'; // Lowest priority
+      // For D3: Use only the last selected core
+      const mask = BigInt(coreMask);
+      let highestBit = 0n;
+      for (let i = 63n; i >= 0n; i--) {
+         if ((mask & (1n << i)) !== 0n) {
+             highestBit = (1n << i);
+             break;
+         }
+      }
+      if (highestBit !== 0n) finalMask = highestBit;
+    }
+
+    const cmd = `powershell -Command "$Process = Get-Process -Id ${pid}; $Process.ProcessorAffinity = ${finalMask.toString()}; $Process.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::${priorityClass}"`;
+    console.log(`Executing [${mode}]: ${cmd}`);
     
     return new Promise((resolve) => {
       exec(cmd, (error) => {
@@ -129,7 +191,7 @@ ipcMain.handle('set-affinity', (event, { pid, coreMask }) => {
       });
     });
   } else {
-    console.log(`[Simulation] Setting affinity for PID ${pid} to mask ${coreMask}`);
+    console.log(`[Simulation] Mode: ${mode}, PID: ${pid}, Mask: ${coreMask}`);
     return Promise.resolve({ success: true, message: "Simulated on macOS" });
   }
 });

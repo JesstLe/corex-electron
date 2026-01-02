@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function SettingsPanel() {
+export default function SettingsPanel({ mode, onModeChange }) {
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm mx-6 mt-4 space-y-6 border border-gray-100">
       <div className="flex items-center justify-between">
@@ -21,20 +21,44 @@ export default function SettingsPanel() {
         <span className="text-gray-600 font-medium text-sm">绑定模式</span>
         <div className="flex items-center gap-6">
           <label className="flex items-center gap-2 cursor-pointer group">
-            <input type="radio" name="mode" defaultChecked className="accent-primary w-4 h-4" />
+            <input 
+              type="radio" 
+              name="mode" 
+              checked={mode === 'dynamic'}
+              onChange={() => onModeChange('dynamic')}
+              className="accent-primary w-4 h-4" 
+            />
             <span className="text-sm text-gray-700 font-bold group-hover:text-primary transition-colors">动态</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer group">
-            <input type="radio" name="mode" className="accent-primary w-4 h-4" />
+            <input 
+              type="radio" 
+              name="mode" 
+              checked={mode === 'static'}
+              onChange={() => onModeChange('static')}
+              className="accent-primary w-4 h-4" 
+            />
             <span className="text-sm text-gray-700 group-hover:text-primary transition-colors">静态</span>
           </label>
-          <label className="flex items-center gap-2 cursor-not-allowed opacity-50">
-            <input type="radio" name="mode" disabled className="accent-primary w-4 h-4" />
-            <span className="text-sm text-yellow-500 font-medium">D2</span>
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <input 
+              type="radio" 
+              name="mode" 
+              checked={mode === 'd2'}
+              onChange={() => onModeChange('d2')}
+              className="accent-primary w-4 h-4" 
+            />
+            <span className="text-sm text-yellow-500 font-medium group-hover:text-yellow-600 transition-colors">平衡</span>
           </label>
           <label className="flex items-center gap-2 cursor-pointer group">
-            <input type="radio" name="mode" className="accent-primary w-4 h-4" />
-            <span className="text-sm text-green-500 font-medium group-hover:text-green-600 transition-colors">D3 省电</span>
+            <input 
+              type="radio" 
+              name="mode" 
+              checked={mode === 'd3'}
+              onChange={() => onModeChange('d3')}
+              className="accent-primary w-4 h-4" 
+            />
+            <span className="text-sm text-green-500 font-medium group-hover:text-green-600 transition-colors">省电</span>
           </label>
         </div>
       </div>

@@ -11,6 +11,7 @@ function App() {
   const [scanning, setScanning] = useState(false);
   const [selectedPid, setSelectedPid] = useState(null);
   const [selectedCores, setSelectedCores] = useState([]);
+  const [mode, setMode] = useState('dynamic'); // 'dynamic' | 'static' | 'd2' | 'd3'
   const [status, setStatus] = useState('standby'); // 'standby' | 'active'
 
   // Initialize CPU Info and Cores
@@ -96,14 +97,14 @@ function App() {
     });
 
     if (window.electron) {
-      const result = await window.electron.setAffinity(selectedPid, mask.toString());
+      const result = await window.electron.setAffinity(selectedPid, mask.toString(), mode);
       if (result.success) {
         setStatus('active');
       } else {
         alert('设置失败: ' + result.error);
       }
     } else {
-      console.log(`Setting affinity for ${selectedPid} to ${mask.toString()}`);
+      console.log(`Setting affinity for ${selectedPid} to ${mask.toString()} with mode ${mode}`);
       setStatus('active');
     }
   };
@@ -140,7 +141,7 @@ function App() {
           onApply={handleApply}
         />
         
-        <SettingsPanel />
+        <SettingsPanel mode={mode} onModeChange={setMode} />
       </div>
 
       <ControlBar 

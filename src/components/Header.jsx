@@ -8,7 +8,7 @@ export default function Header({ cpuModel }) {
   return (
     <div className="flex items-center justify-between px-6 py-4 drag bg-white/80 backdrop-blur-md sticky top-0 z-10">
       <div className="flex items-center gap-4">
-        <h1 className="text-lg font-bold text-gray-800 tracking-tight">CoreX 云霄</h1>
+        <h1 className="text-lg font-bold text-gray-800 tracking-tight">CoreX</h1>
         <div className="h-4 w-px bg-gray-300"></div>
         <span className="text-xs text-gray-500 font-medium tracking-wide uppercase">{cpuModel || 'Loading CPU...'}</span>
       </div>
