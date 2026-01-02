@@ -1,54 +1,55 @@
 import React from 'react';
-import clsx from 'clsx';
+import { Play, Square, Cpu, Activity } from 'lucide-react';
 
 export default function ControlBar({ status, onApplyConfig, onStop, cpuInfo }) {
-  const isActive = status === 'active';
-
-  // 动态生成 CPU 信息显示
-  const getCpuSummary = () => {
-    if (!cpuInfo) return '加载中...';
-    const cores = cpuInfo.cores || 0;
-    const threads = cores; // 在这个项目中 cores 已经是线程数
-    const physicalCores = Math.floor(cores / 2);
-    return `${physicalCores}C/${threads}T [${cpuInfo.model || 'Unknown CPU'}]`;
-  };
+  const isRunning = status === 'active';
 
   return (
-    <div className="mt-auto">
-      <div className="px-6 py-6 flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className={clsx("w-2.5 h-2.5 rounded-full shadow-sm animate-pulse", isActive ? "bg-green-500 shadow-green-200" : "bg-red-500 shadow-red-200")}></div>
-          <span className={clsx("font-bold text-sm uppercase tracking-wider", isActive ? "text-green-600" : "text-gray-400")}>
-            {isActive ? 'ACTIVE' : 'STANDBY'}
-          </span>
-        </div>
-
-        <div className="flex gap-3">
-          <button
-            onClick={onApplyConfig}
-            className="px-8 py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg font-medium shadow-md shadow-blue-200 transition-all active:scale-95 hover:-translate-y-0.5"
-          >
-            应用配置
-          </button>
-          <button
-            onClick={onStop}
-            disabled={!isActive}
-            className="px-8 py-2.5 bg-white border border-gray-200 text-gray-500 rounded-lg font-medium hover:bg-gray-50 hover:text-red-500 disabled:opacity-50 disabled:hover:bg-white disabled:hover:text-gray-500 transition-all active:scale-95"
-          >
-            停止
-          </button>
+    <div className="mt-auto pt-6 flex items-center justify-between border-t border-white/5">
+      <div className="flex items-center gap-4">
+        <div className="flex flex-col">
+           <span className="text-xs text-slate-500 uppercase tracking-wider">CPU 状态</span>
+           <div className="flex items-center gap-2 mt-1">
+             <Activity size={14} className="text-emerald-400" />
+             <span className="text-sm font-medium text-slate-200">
+               {cpuInfo?.speed ? `${cpuInfo.speed} GHz` : 'Normal'}
+             </span>
+           </div>
         </div>
       </div>
 
-      {/* Bottom Status Bar */}
-      <div className="bg-white border-t border-gray-200 px-6 py-2.5 flex justify-between items-center text-[10px] text-gray-400 font-medium">
-        <span className="tracking-wide">{getCpuSummary()}</span>
-        <div className="flex items-center gap-2">
-          <div className={clsx("w-1.5 h-1.5 rounded-full", isActive ? "bg-green-500" : "bg-gray-300")}></div>
-          <span>{isActive ? '已激活' : '未激活'}</span>
-        </div>
+      <div className="flex items-center gap-3">
+        {isRunning && (
+          <button
+            onClick={onStop}
+            className="px-6 py-2.5 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors font-medium flex items-center gap-2 text-sm"
+          >
+            <Square size={16} fill="currentColor" />
+            停止调度
+          </button>
+        )}
+        
+        <button
+          onClick={onApplyConfig}
+          className={`px-8 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 transition-all duration-300 shadow-lg ${
+            isRunning 
+              ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/20'
+              : 'bg-cyan-500 hover:bg-cyan-400 text-white shadow-cyan-500/20'
+          }`}
+        >
+          {isRunning ? (
+            <>
+              <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>
+              配置已生效 (点击更新)
+            </>
+          ) : (
+            <>
+              <Play size={16} fill="currentColor" />
+              立即应用
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
 }
-

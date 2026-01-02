@@ -1,46 +1,69 @@
 import React from 'react';
-import clsx from 'clsx';
+import { Cpu, Zap, Lock, BarChart2, Leaf } from 'lucide-react';
 
-export default function CoreGrid({ cores, selectedCores, onToggleCore, onSelectAll, onSelectNone, onSelectPhysical, onSelectSMT, onApply }) {
-  
+export default function CoreGrid({ cores, selectedCores, onToggleCore, onSelectAll, onSelectNone, onSelectPhysical, onSelectSMT }) {
   return (
-    <div className="bg-white rounded-xl p-6 shadow-sm mx-6 mt-4 border border-gray-100">
+    <div className="bg-slate-900/50 rounded-2xl border border-white/5 p-6 backdrop-blur-sm">
       <div className="flex items-center justify-between mb-6">
-        <span className="text-gray-600 font-medium text-sm">允许调度池</span>
+        <h3 className="text-lg font-bold text-white flex items-center gap-2">
+          <Cpu className="text-cyan-400" size={20} />
+          CPU 核心拓扑
+        </h3>
+        
         <div className="flex gap-2">
-          <button onClick={onSelectPhysical} className="px-3 py-1.5 text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100 hover:text-primary transition-colors">物理核心</button>
-          <button onClick={onSelectSMT} className="px-3 py-1.5 text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100 hover:text-primary transition-colors">SMT</button>
-          <button onClick={onSelectAll} className="px-3 py-1.5 text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100 hover:text-primary transition-colors">全选</button>
-          <button onClick={onSelectNone} className="px-3 py-1.5 text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200 rounded hover:bg-gray-100 hover:text-primary transition-colors">清空</button>
-          <button onClick={onApply} className="px-5 py-1.5 text-xs font-medium bg-primary text-white rounded hover:bg-primary-hover shadow-md shadow-blue-200 transition-all active:scale-95 ml-2">应用</button>
+           <button onClick={onSelectAll} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">全选</button>
+           <button onClick={onSelectPhysical} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">仅物理核心</button>
+           <button onClick={onSelectSMT} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">仅超线程</button>
+           <button onClick={onSelectNone} className="px-3 py-1.5 text-xs font-medium text-slate-400 bg-slate-800/50 hover:bg-slate-700 rounded-lg transition-colors border border-white/5">清空</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-8 gap-3">
-        {cores.map((core, index) => {
-          const isSelected = selectedCores.includes(index);
-          const isPhysical = index % 2 === 0;
+      <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-3">
+        {cores.map((coreIndex) => {
+          const isSelected = selectedCores.includes(coreIndex);
+          const isPhysical = coreIndex % 2 === 0;
           
           return (
             <button
-              key={index}
-              onClick={() => onToggleCore(index)}
-              className={clsx(
-                "flex flex-col items-center justify-center py-3 rounded-lg transition-all duration-200 border relative overflow-hidden group",
+              key={coreIndex}
+              onClick={() => onToggleCore(coreIndex)}
+              className={`relative group aspect-square rounded-xl flex flex-col items-center justify-center transition-all duration-300 ${
                 isSelected 
-                  ? "bg-primary border-primary text-white shadow-md shadow-blue-200 scale-105 z-10" 
-                  : "bg-gray-50 border-gray-100 text-gray-500 hover:bg-white hover:border-gray-300 hover:shadow-sm"
-              )}
+                  ? 'bg-cyan-500/10 border-cyan-500/50 shadow-[0_0_15px_rgba(6,182,212,0.2)]' 
+                  : 'bg-slate-800/30 border-white/5 hover:bg-slate-800 hover:border-white/10'
+              } border`}
             >
-              <span className="text-sm font-bold z-10 relative">核心 {index}</span>
-              <span className={clsx("text-[10px] mt-0.5 z-10 relative font-medium", isSelected ? "text-blue-100" : "text-gray-400 group-hover:text-gray-500")}>
-                {isPhysical ? '物理核心' : 'SMT'}
-              </span>
-              {/* Glossy effect for selected items */}
-              {isSelected && <div className="absolute top-0 left-0 w-full h-1/2 bg-white/10 pointer-events-none"></div>}
+              <div className={`text-xs font-bold mb-1 transition-colors ${
+                isSelected ? 'text-cyan-400' : 'text-slate-500 group-hover:text-slate-300'
+              }`}>
+                #{coreIndex}
+              </div>
+              
+              {/* Core Visual */}
+              <div className={`w-8 h-1 rounded-full transition-all duration-300 ${
+                isSelected 
+                  ? 'bg-cyan-400 shadow-[0_0_8px_#22d3ee] w-6' 
+                  : 'bg-slate-700 w-2 group-hover:w-4 group-hover:bg-slate-600'
+              }`}></div>
+              
+              {/* Type Indicator */}
+              <div className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full">
+                 <div className={`${isPhysical ? 'bg-blue-500' : 'bg-purple-500'} w-full h-full rounded-full opacity-50`}></div>
+              </div>
             </button>
           );
         })}
+      </div>
+      
+      <div className="flex items-center gap-4 mt-4 text-xs text-slate-500 justify-end">
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-blue-500/50"></div>
+          物理核心
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded-full bg-purple-500/50"></div>
+          超线程
+        </div>
       </div>
     </div>
   );
