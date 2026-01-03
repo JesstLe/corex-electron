@@ -46,7 +46,7 @@ export default function ControlBar({ status, onApplyConfig, onStop, onSaveProfil
           {showPriorityMenu && (
             <>
               <div className="fixed inset-0 z-10" onClick={() => setShowPriorityMenu(false)}></div>
-              <div className="absolute top-full right-0 mt-2 w-32 bg-white rounded-xl shadow-lg border border-slate-100 p-1 z-20 flex flex-col gap-0.5">
+              <div className="absolute bottom-full right-0 mb-2 w-32 bg-white rounded-xl shadow-lg border border-slate-100 p-1 z-20 flex flex-col gap-0.5">
                 {priorities.map(p => (
                   <button
                     key={p.value}
