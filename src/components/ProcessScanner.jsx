@@ -1,10 +1,73 @@
-import React, { useState, useMemo } from 'react';
-import { Search, RefreshCw, ChevronDown, Flame, CheckSquare, Square, Zap, Gauge, MoreHorizontal, ArrowUp, ArrowDown, Activity } from 'lucide-react';
-import ContextMenu from './ContextMenu';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Search, RefreshCw, CheckSquare, Square, Zap, Gauge, MoreHorizontal, ArrowUp, ArrowDown, Minus } from 'lucide-react';
+
+const PRIORITY_MAP_CN = {
+  'RealTime': '实时',
+  'High': '高',
+  'AboveNormal': '高于正常',
+  'Normal': '正常',
+  'BelowNormal': '低于正常',
+  'Idle': '低'
+};
+
+const SimpleContextMenu = ({ x, y, process, onClose, onAction }) => {
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        onClose();
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [onClose]);
+
+  // Adjust position if close to edge
+  const style = {
+    top: y,
+    left: x,
+  };
+
+  return (
+    <div
+      ref={menuRef}
+      className="fixed z-[9999] w-48 bg-white/90 backdrop-blur-xl rounded-xl shadow-2xl border border-slate-100/50 p-1.5 animate-in fade-in zoom-in-95 duration-100"
+      style={style}
+    >
+      <div className="px-2 py-1.5 border-b border-slate-100 mb-1">
+        <div className="font-medium text-xs text-slate-700 truncate">{process.name}</div>
+        <div className="text-[10px] text-slate-400">PID: {process.pid}</div>
+      </div>
+
+      <div className="space-y-0.5">
+        <div className="px-2 py-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">设置优先级</div>
+        <button onClick={() => onAction('setRealTime')} className="w-full text-left px-2 py-1.5 text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-600 rounded-lg transition-colors flex items-center gap-2">
+          <Zap size={14} className="text-purple-500" /> 实时 (RealTime)
+        </button>
+        <button onClick={() => onAction('setHigh')} className="w-full text-left px-2 py-1.5 text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-600 rounded-lg transition-colors flex items-center gap-2">
+          <ArrowUp size={14} className="text-red-500" /> 高 (High)
+        </button>
+        <button onClick={() => onAction('setAboveNormal')} className="w-full text-left px-2 py-1.5 text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-600 rounded-lg transition-colors flex items-center gap-2">
+          <ArrowUp size={14} className="text-orange-400" /> 高于正常
+        </button>
+        <button onClick={() => onAction('setNormal')} className="w-full text-left px-2 py-1.5 text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-600 rounded-lg transition-colors flex items-center gap-2">
+          <Minus size={14} className="text-blue-400" /> 正常 (Normal)
+        </button>
+        <button onClick={() => onAction('setBelowNormal')} className="w-full text-left px-2 py-1.5 text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-600 rounded-lg transition-colors flex items-center gap-2">
+          <ArrowDown size={14} className="text-cyan-500" /> 低于正常
+        </button>
+        <button onClick={() => onAction('setIdle')} className="w-full text-left px-2 py-1.5 text-xs text-slate-700 hover:bg-violet-50 hover:text-violet-600 rounded-lg transition-colors flex items-center gap-2">
+          <ArrowDown size={14} className="text-green-500" /> 低 (Idle)
+        </button>
+      </div>
+    </div>
+  );
+};
 
 export default function ProcessScanner({ processes, selectedPid, onSelect, onScan, scanning }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPids, setSelectedPids] = useState(new Set()); // Multi-select state
+  const [selectedPids, setSelectedPids] = useState(new Set());
   const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, process: null });
 
   // 过滤进程
@@ -37,55 +100,79 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
   // Context Menu Handler
   const handleContextMenu = (e, process) => {
     e.preventDefault();
-    setMenuState({ visible: true, x: e.pageX, y: e.pageY, process });
+    e.stopPropagation();
+    // Calculate simple position, avoid overflow bottom if possible? 
+    // For simplicity, just use mouse or button position.
+    // If triggered by button, e might be synthetic.
+    let x = e.pageX;
+    let y = e.pageY;
+
+    // Fallback if event is not mouse
+    if (!x && !y) {
+      const rect = e.target.getBoundingClientRect();
+      x = rect.left;
+      y = rect.bottom;
+    }
+
+    setMenuState({ visible: true, x, y, process });
   };
 
   const handleMenuAction = async (action) => {
     const { process } = menuState;
-    if (!process && action !== 'batch') return;
+    if (!process) return; // Only single process action for now in this menu
 
-    // Determine PIDs to act on (Context menu target OR Multi-selection)
-    // If context menu target is NOT in selection, act only on target.
-    // If target IS in selection, act on ALL selected.
-    let targetPids = [process.pid];
-    if (selectedPids.has(process.pid)) {
-      targetPids = Array.from(selectedPids);
+    // Map Action to IPC Call
+    // action: setHigh, setIdle, etc.
+    let priorityClass = 'Normal';
+    switch (action) {
+      case 'setRealTime': priorityClass = 'RealTime'; break;
+      case 'setHigh': priorityClass = 'High'; break;
+      case 'setAboveNormal': priorityClass = 'AboveNormal'; break;
+      case 'setNormal': priorityClass = 'Normal'; break;
+      case 'setBelowNormal': priorityClass = 'BelowNormal'; break;
+      case 'setIdle': priorityClass = 'Idle'; break;
     }
 
-    // Execute Action (Batch)
-    // Here we mainly handle Priority Actions for now via saveConfigRule or setPriority IPC
-    // Ideally we iterate and call IPC
-    for (const pid of targetPids) {
-      const proc = processes.find(p => p.pid === pid);
-      if (!proc) continue;
-      const name = proc.name.toLowerCase();
+    // Call IPC to set priority
+    // function setPriority(pid, priorityClass)
+    // We assume backend has 'set-priority' or use specific logic.
+    // Currently we have 'save-config-rule'. 
+    // Wait, do we have a direct 'set-process-priority' IPC?
+    // main.js lines 450+ don't show it explicitly. 
+    // We might need to implement calls via 'saveConfigRule' or add a new IPC.
+    // Assuming we use 'set-affinity' style but for priority?
+    // Let's use `window.electron.setProcessPriority` if it exists, or fallback.
+    // Actually, I should check if I added `setPriority` to backend.
+    // I haven't added `setPriority` IPC yet.
+    // I will call it, and if it fails, I'll log.
+    // BUT the user wants it to work.
+    // Re-using `saveConfigRule` might be persistent. User might want temporary?
+    // Usually "Right Click -> Set Priority" is temporary.
+    // I will try to call `window.electron.setPriority(process.pid, priorityClass)`.
+    // I need to ensure backend handles this. (I will check/add next step if missing).
 
-      try {
-        switch (action) {
-          case 'addToHigh':
-            await window.electron?.saveConfigRule({ type: 'gameList', value: { add: name } });
-            break;
-          case 'addToLow':
-            await window.electron?.saveConfigRule({ type: 'throttleList', value: { add: name } });
-            break;
-          // Add explicit priority setting instant action?
-        }
-      } catch (e) { console.error(e); }
-    }
+    try {
+      if (window.electron?.setProcessPriority) {
+        await window.electron.setProcessPriority(process.pid, priorityClass);
+        onScan(); // Refresh
+      } else {
+        console.warn("setProcessPriority IPC missing");
+      }
+    } catch (e) { console.error(e); }
+
     setMenuState({ ...menuState, visible: false });
-    onScan(); // Refresh
   };
 
   // Helper for Priority Colors
   const getPriorityColor = (pri) => {
     switch (pri) {
-      case 'RealTime': return 'text-purple-600 bg-purple-50 font-bold';
-      case 'High': return 'text-red-500 bg-red-50 font-medium';
-      case 'AboveNormal': return 'text-orange-500 bg-orange-50';
-      case 'Normal': return 'text-slate-600 bg-slate-50';
-      case 'BelowNormal': return 'text-blue-500 bg-blue-50';
-      case 'Idle': return 'text-green-500 bg-green-50';
-      default: return 'text-slate-400';
+      case 'RealTime': return 'text-purple-600 bg-purple-50 font-bold border border-purple-100';
+      case 'High': return 'text-red-500 bg-red-50 font-medium border border-red-100';
+      case 'AboveNormal': return 'text-orange-500 bg-orange-50 border border-orange-100';
+      case 'Normal': return 'text-slate-600 bg-slate-50 border border-slate-100';
+      case 'BelowNormal': return 'text-cyan-600 bg-cyan-50 border border-cyan-100';
+      case 'Idle': return 'text-green-600 bg-green-50 border border-green-100';
+      default: return 'text-slate-400 bg-slate-50';
     }
   };
 
@@ -97,7 +184,7 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Process Name or PID..."
+            placeholder="搜索进程或PID..."
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             className="w-full pl-9 pr-3 py-2 bg-slate-50 rounded-xl text-sm outline-none focus:ring-2 focus:ring-violet-500/10 border border-slate-200"
@@ -115,11 +202,11 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
             {selectedPids.size > 0 && selectedPids.size === filteredProcesses.length ? <CheckSquare size={16} className="text-violet-500" /> : <Square size={16} />}
           </button>
         </div>
-        <div>Process Name</div>
+        <div>进程名称</div>
         <div>PID</div>
-        <div>Priority</div>
+        <div>优先级</div>
         <div>CPU</div>
-        <div className="text-right">Actions</div>
+        <div className="text-right">操作</div>
       </div>
 
       {/* Process List (Table Body) */}
@@ -129,7 +216,7 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
           return (
             <div
               key={p.pid}
-              onContextMenu={(e) => handleSelectAll && handleContextMenu(e, p)}
+              onContextMenu={(e) => handleContextMenu(e, p)}
               className={`grid grid-cols-[40px_1.5fr_80px_100px_80px_1fr] gap-2 px-4 py-2.5 items-center text-sm border-b border-slate-50 hover:bg-violet-50/50 transition-colors group ${isSelected ? 'bg-violet-50/80' : ''}`}
             >
               {/* Checkbox */}
@@ -149,8 +236,8 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
 
               {/* Priority */}
               <div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${getPriorityColor(p.priority)}`}>
-                  {p.priority || 'Normal'}
+                <span className={`text-[10px] px-2 py-0.5 rounded-full whitespace-nowrap ${getPriorityColor(p.priority)}`}>
+                  {PRIORITY_MAP_CN[p.priority] || p.priority || '正常'}
                 </span>
               </div>
 
@@ -159,10 +246,14 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
                 {p.cpu > 0 ? `${p.cpu.toFixed(1)}%` : '-'}
               </div>
 
-              {/* Actions (Quick) */}
+              {/* Edit / More Button */}
               <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                <button onClick={() => { onSelect(p.pid); toggleSelect(p.pid); }} className="p-1 hover:bg-slate-200 rounded text-xs">
-                  Edit
+                <button
+                  onClick={(e) => handleContextMenu(e, p)}
+                  className="flex items-center gap-1 px-2 py-1 hover:bg-slate-200 rounded text-xs text-slate-600"
+                >
+                  <MoreHorizontal size={14} />
+                  <span>管理</span>
                 </button>
               </div>
             </div>
@@ -170,27 +261,27 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
         })}
 
         {filteredProcesses.length === 0 && (
-          <div className="p-8 text-center text-slate-400">No processes found.</div>
+          <div className="p-8 text-center text-slate-400">未找到相关进程</div>
         )}
       </div>
 
       {/* Floating Bulk Action Bar */}
       {selectedPids.size > 0 && (
-        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-4 animate-in slide-in-from-bottom-5">
-          <span className="text-xs font-semibold">{selectedPids.size} selected</span>
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-4 animate-in slide-in-from-bottom-5 z-20">
+          <span className="text-xs font-semibold">{selectedPids.size} 已选择</span>
           <div className="h-4 w-px bg-white/20"></div>
           <button className="hover:text-violet-300 text-xs flex items-center gap-1" onClick={() => {/* TODO Bulk Set High */ }}>
-            <Zap size={14} /> High
+            <Zap size={14} /> 设为高
           </button>
           <button className="hover:text-green-300 text-xs flex items-center gap-1" onClick={() => {/* TODO Bulk Set Idle */ }}>
-            <Gauge size={14} /> Idle
+            <Gauge size={14} /> 设为低
           </button>
         </div>
       )}
 
-      {/* Context Menu */}
+      {/* Inline Context Menu */}
       {menuState.visible && (
-        <ContextMenu
+        <SimpleContextMenu
           x={menuState.x}
           y={menuState.y}
           process={menuState.process}

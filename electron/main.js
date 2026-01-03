@@ -1399,6 +1399,29 @@ foreach($proc in $processes) {
 }
 `;
 
+    // 设置进程优先级
+    ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
+      if (!pid || !priority) return { success: false, error: '参数缺失' };
+
+      const isWin = process.platform === 'win32';
+      if (!isWin) return { success: false, error: '仅支持 Windows' }; // TODO: implementing renice for linux/mac
+
+      return new Promise((resolve) => {
+        const safePid = parseInt(pid, 10);
+        // Validate Priority Enum Safety
+        const allowed = ['RealTime', 'High', 'AboveNormal', 'Normal', 'BelowNormal', 'Idle'];
+        if (!allowed.includes(priority)) return resolve({ success: false, error: '无效的优先级' });
+
+        const cmd = `powershell -Command "try { $p = Get-Process -Id ${safePid} -ErrorAction Stop; $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::${priority}; } catch { exit 1 }"`;
+
+        exec(cmd, (error) => {
+          if (error) resolve({ success: false, error: '设置失败 (可能需要管理员权限)' });
+          else resolve({ success: true });
+        });
+      });
+    });
+
+
     return new Promise((resolve, reject) => {
       exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
         { timeout: 30000 },
