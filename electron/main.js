@@ -281,6 +281,11 @@ const createWindow = () => {
     resizable: true,
     minWidth: 800,
     minHeight: 500,
+    icon: nativeImage.createFromPath(
+      app.isPackaged
+        ? path.join(process.resourcesPath, 'icon.png')
+        : path.join(__dirname, '../build/icon.png')
+    ),
   };
 
   if (appConfig.x !== undefined && appConfig.y !== undefined) {
@@ -468,11 +473,16 @@ ipcMain.handle('get-processes', async () => {
             data = [data];
           }
 
+          // Get CPU core count for normalization
+          const cpuCores = os.cpus().length;
+
           const processes = [];
           data.forEach(item => {
             const pid = item.IDProcess;
             let name = item.Name;
-            const cpu = item.PercentProcessorTime || 0;
+            // Normalize CPU usage: Windows reports total across all cores
+            // Divide by core count to get percentage relative to single core (0-100%)
+            const cpu = (item.PercentProcessorTime || 0) / cpuCores;
 
             if (!name || name === '_Total' || name === 'Idle' || !pid || pid <= 0) return;
 

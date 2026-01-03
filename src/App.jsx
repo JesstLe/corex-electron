@@ -4,6 +4,7 @@ import ProcessScanner from './components/ProcessScanner';
 import CoreGrid from './components/CoreGrid';
 import SettingsPanel from './components/SettingsPanel';
 import ControlBar from './components/ControlBar';
+import { ToastContainer } from './components/Toast';
 import { getCcdConfig, generateCcdMapping } from './data/cpuDatabase';
 
 function App() {
@@ -19,6 +20,16 @@ function App() {
   const [status, setStatus] = useState('standby');
   const [primaryCore, setPrimaryCore] = useState('auto');
   const [settings, setSettings] = useState({});
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = (message, type = 'success', duration = 3000) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type, duration }]);
+  };
+
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(toast => toast.id !== id));
+  };
 
   useEffect(() => {
     async function init() {
@@ -121,18 +132,26 @@ function App() {
   const handleSettingChange = async (key, value) => {
     setSettings(prev => ({ ...prev, [key]: value }));
     if (window.electron) {
-      await window.electron.setSetting(key, value);
+      const result = await window.electron.setSetting(key, value);
+      if (result.success) {
+        const settingNames = {
+          launchOnStartup: '开机自启动',
+          closeToTray: '关闭时最小化'
+        };
+        const settingName = settingNames[key] || key;
+        showToast(`${settingName}已${value ? '启用' : '禁用'}`, 'success');
+      }
     }
   };
 
   const handleApply = async () => {
     setError(null);
     if (!selectedPid) {
-      setError('请先选择目标程序');
+      showToast('请先选择目标程序', 'warning');
       return;
     }
     if (selectedCores.length === 0) {
-      setError('请至少选择一个核心');
+      showToast('请至少选择一个核心', 'warning');
       return;
     }
 
@@ -154,32 +173,34 @@ function App() {
         const result = await window.electron.setAffinity(selectedPid, mask.toString(), mode);
         if (result.success) {
           setStatus('active');
+          showToast(`已应用到进程 ${selectedPid}`, 'success');
         } else {
-          setError(result.error || '设置失败');
+          showToast(result.error || '设置失败', 'error');
         }
       } else {
         console.log(`Affinity: PID=${selectedPid}, Mask=${mask}, Mode=${mode}`);
         setStatus('active');
+        showToast(`已应用到进程 ${selectedPid}`, 'success');
       }
     } catch (err) {
-      setError(err.message || '应用失败');
+      showToast(err.message || '应用失败', 'error');
     }
   };
 
   const handleSaveProfile = async () => {
     setError(null);
     if (!selectedPid) {
-      setError('请选择目标程序');
+      showToast('请选择目标程序', 'warning');
       return;
     }
     if (selectedCores.length === 0) {
-      setError('请至少选择一个核心');
+      showToast('请至少选择一个核心', 'warning');
       return;
     }
 
     const process = processes.find(p => p.pid === selectedPid);
     if (!process) {
-      setError('进程已结束或无效');
+      showToast('进程已结束或无效', 'error');
       return;
     }
 
@@ -208,17 +229,19 @@ function App() {
         if (result.success) {
           setSettings(prev => ({ ...prev, profiles: result.profiles }));
           setStatus('active');
+          showToast(`策略已保存: ${process.name}`, 'success');
         } else {
-          setError(result.error || '保存策略失败');
+          showToast(result.error || '保存策略失败', 'error');
         }
       } else {
         console.log('Mock Save Profile:', profile);
         const newProfiles = [...(settings.profiles || []), { ...profile, timestamp: Date.now() }];
         setSettings(prev => ({ ...prev, profiles: newProfiles }));
+        showToast(`策略已保存: ${process.name}`, 'success');
       }
     } catch (err) {
       console.error(err);
-      setError('保存策略失败');
+      showToast('保存策略失败', 'error');
     }
   };
 
@@ -228,14 +251,18 @@ function App() {
         const result = await window.electron.removeProfile(name);
         if (result.success) {
           setSettings(prev => ({ ...prev, profiles: result.profiles }));
+          showToast(`已删除策略: ${name}`, 'success');
+        } else {
+          showToast('删除策略失败', 'error');
         }
       } else {
         const newProfiles = (settings.profiles || []).filter(p => p.name !== name);
         setSettings(prev => ({ ...prev, profiles: newProfiles }));
+        showToast(`已删除策略: ${name}`, 'success');
       }
     } catch (err) {
       console.error(err);
-      setError('删除策略失败');
+      showToast('删除策略失败', 'error');
     }
   };
 
@@ -275,13 +302,8 @@ function App() {
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-white to-violet-50 overflow-hidden">
       <Header cpuModel={cpuInfo?.model} />
 
-      {/* 错误提示 */}
-      {error && (
-        <div className="mx-6 mt-2 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-center justify-between">
-          <span>{error}</span>
-          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-lg leading-none">×</button>
-        </div>
-      )}
+      {/* Toast Notifications */}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
 
       {/* 主内容区 */}
       <div className="flex-1 overflow-y-auto p-6 space-y-4">
