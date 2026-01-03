@@ -271,10 +271,10 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur text-white px-4 py-2 rounded-full shadow-xl flex items-center gap-4 animate-in slide-in-from-bottom-5 z-20">
           <span className="text-xs font-semibold">{selectedPids.size} 已选择</span>
           <div className="h-4 w-px bg-white/20"></div>
-          <button className="hover:text-violet-300 text-xs flex items-center gap-1" onClick={() => {/* TODO Bulk Set High */ }}>
+          <button className="hover:text-violet-300 text-xs flex items-center gap-1" onClick={() => handleBulkAction('High')}>
             <Zap size={14} /> 设为高
           </button>
-          <button className="hover:text-green-300 text-xs flex items-center gap-1" onClick={() => {/* TODO Bulk Set Idle */ }}>
+          <button className="hover:text-green-300 text-xs flex items-center gap-1" onClick={() => handleBulkAction('Idle')}>
             <Gauge size={14} /> 设为低
           </button>
         </div>
