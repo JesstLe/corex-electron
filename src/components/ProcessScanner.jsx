@@ -92,6 +92,7 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
                     setIsOpen(false);
                     setSearchTerm('');
                   }}
+                  title={`Name: ${process.name}\nPID: ${process.pid}\nCPU: ${process.cpu}%\nVersion: ${process.version || 'N/A'}`}
                   className={`w-full px-4 py-3 text-left hover:bg-violet-50 transition-colors flex items-center justify-between group ${selectedPid === process.pid ? 'bg-violet-50' : ''
                     }`}
                 >
@@ -123,6 +124,9 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
         <div className="mt-3 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-500"></div>
           <span className="text-xs text-slate-500">已选择 · PID {selectedProcess.pid}</span>
+          {selectedProcess.version && (
+            <span className="text-xs text-slate-400">· v{selectedProcess.version}</span>
+          )}
           {selectedProcess.cpu !== undefined && (
             <span className="text-xs text-slate-400">· CPU {selectedProcess.cpu.toFixed(1)}%</span>
           )}

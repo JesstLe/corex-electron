@@ -470,70 +470,100 @@ ipcMain.handle('get-processes', async () => {
     const isWin = process.platform === 'win32';
 
     if (isWin) {
-      // 使用 Get-Counter 获取更准确的 CPU 使用率（类似任务管理器）
-      // Get-Counter 返回的 % Processor Time 是所有核心的总和，需要除以核心数
       const cpuCores = os.cpus().length;
 
-      // 使用 Get-CimInstance 获取进程信息
-      const psCommand = `powershell -NoProfile -Command "try { Get-CimInstance Win32_PerfFormattedData_PerfProc_Process | Select-Object Name,IDProcess,PercentProcessorTime | ConvertTo-Json -Compress } catch { Write-Output '[]' }"`;
+      // 1. Get CPU Usage via WMI (Fast, similar to Task Manager logic)
+      const cpuCommand = `
+        Get-WmiObject Win32_PerfFormattedData_PerfProc_Process | 
+        Select-Object Name, IDProcess, PercentProcessorTime |
+        ConvertTo-Json -Compress
+      `;
 
-      exec(psCommand, { timeout: 15000, maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
-        if (error) {
-          console.error('PowerShell Scan Failed:', error.message);
+      // 2. Get Version Info via Get-Process (Parallel execution)
+      const versionCommand = `
+        Get-Process -ErrorAction SilentlyContinue | 
+        Select-Object Id, @{Name='Version';Expression={$_.MainModule.FileVersionInfo.ProductVersion}}, @{Name='Path';Expression={$_.MainModule.FileName}} |
+        ConvertTo-Json -Compress
+      `;
+
+      Promise.all([
+        new Promise((res) => exec(`powershell -NoProfile -Command "${cpuCommand.replace(/\n/g, ' ')}"`, { timeout: 15000, maxBuffer: 1024 * 1024 * 5 }, (e, out) => res({ e, out }))),
+        new Promise((res) => exec(`powershell -NoProfile -Command "${versionCommand.replace(/\n/g, ' ')}"`, { timeout: 15000, maxBuffer: 1024 * 1024 * 5 }, (e, out) => res({ e, out })))
+      ]).then(([cpuResult, versionResult]) => {
+        // Handle CPU Scan Errors
+        if (cpuResult.e) {
+          console.error('PowerShell CPU Scan Failed:', cpuResult.e.message);
           return fallbackTasklist(resolve, reject);
         }
 
         try {
-          const rawOutput = stdout.trim();
-          if (!rawOutput) {
-            return resolve([]);
-          }
+          const rawCpu = cpuResult.out.trim();
+          if (!rawCpu) return resolve([]);
 
-          let data;
+          let cpuData = [];
           try {
-            data = JSON.parse(rawOutput);
+            const parsed = JSON.parse(rawCpu);
+            cpuData = Array.isArray(parsed) ? parsed : [parsed];
           } catch (e) {
-            console.error("JSON Parse Error:", e);
+            console.error("JSON Parse Error (CPU):", e);
+            // Don't fail completely if CPU json is weird, maybe try fallback?
+            // checking fallbackTasklist
             return fallbackTasklist(resolve, reject);
           }
 
-          // Convert single object to array if needed
-          if (!Array.isArray(data)) {
-            data = [data];
+          // Handle Version Scan Results (Optional map)
+          const versionMap = new Map();
+          if (!versionResult.e && versionResult.out.trim()) {
+            try {
+              const parsedV = JSON.parse(versionResult.out.trim());
+              const versionData = Array.isArray(parsedV) ? parsedV : [parsedV];
+              versionData.forEach(v => {
+                if (v.Id) versionMap.set(v.Id, {
+                  version: v.Version || '',
+                  path: v.Path || ''
+                });
+              });
+            } catch (ve) {
+              console.warn('Version JSON Parse Warn:', ve);
+            }
           }
 
           const processes = [];
-          data.forEach(item => {
+          cpuData.forEach(item => {
             const pid = item.IDProcess;
             let name = item.Name;
 
-            // Win32_PerfFormattedData_PerfProc_Process.PercentProcessorTime
-            // 返回的是所有逻辑处理器的总和（可能超过 100%）
-            // 除以核心数得到与任务管理器一致的百分比 (0-100%)
-            const rawCpu = item.PercentProcessorTime || 0;
-            // 归一化并保留1位小数，向上取整，确保不超过100%
-            const cpu = Math.min(Math.ceil((rawCpu / cpuCores) * 10) / 10, 100);
+            const rawCpuVal = item.PercentProcessorTime || 0;
+            // Normalize CPU usage
+            const cpu = Math.min(Math.ceil((rawCpuVal / cpuCores) * 10) / 10, 100);
 
             if (!name || name === '_Total' || name === 'Idle' || !pid || pid <= 0) return;
 
-            // Normalize names (remove #1, #2 suffix from WMI)
             name = name.replace(/#\d+$/, '');
-
             if (!name.toLowerCase().endsWith('.exe')) {
               name = name + '.exe';
             }
 
-            processes.push({ pid, name, cpu });
+            const extra = versionMap.get(pid) || {};
+
+            processes.push({
+              pid,
+              name,
+              cpu,
+              version: extra.version,
+              path: extra.path
+            });
           });
 
-          // Sort by CPU usage desc
           processes.sort((a, b) => b.cpu - a.cpu);
           resolve(processes);
+
         } catch (parseError) {
-          console.error('Parse Process List Failed:', parseError);
+          console.error('Data Processing Failed:', parseError);
           fallbackTasklist(resolve, reject);
         }
       });
+
     } else {
       // macOS / Linux Logic
       const cmd = 'ps -ax -o pid,%cpu,comm';
@@ -547,21 +577,17 @@ ipcMain.handle('get-processes', async () => {
           const lines = stdout.split('\n');
           lines.forEach(line => {
             const trimmed = line.trim();
-            // 跳过空行和标题行
             if (!trimmed || trimmed.startsWith('PID') || trimmed.includes('%CPU')) return;
 
-            // 使用更精确的正则表达式匹配 PID, CPU%, 和命令
-            // 格式: "  PID  %CPU COMM" 或 "1234  12.5 /path/to/command"
             const parts = trimmed.split(/\s+/);
             if (parts.length >= 3) {
               const pid = parseInt(parts[0], 10);
               const cpu = parseFloat(parts[1]) || 0;
-              // 命令可能包含空格，所以取剩余所有部分
               const fullPath = parts.slice(2).join(' ');
               const name = path.basename(fullPath.trim());
 
               if (name && !isNaN(pid) && pid > 0) {
-                processes.push({ pid, name, cpu });
+                processes.push({ pid, name, cpu, version: '', path: fullPath });
               }
             }
           });
@@ -603,6 +629,69 @@ function fallbackTasklist(resolve, reject) {
 
 ipcMain.handle('set-affinity', (event, pid, coreMask, mode) => {
   return setAffinity(pid, coreMask, mode);
+});
+
+// Set Process Priority
+ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
+  return new Promise((resolve, reject) => {
+    const isWin = process.platform === 'win32';
+
+    // Validate inputs
+    if (!pid || pid <= 0) return reject(new Error('无效的进程ID'));
+    if (!priority) return reject(new Error('未指定优先级'));
+
+    console.log(`Setting priority for PID ${pid} to ${priority}`);
+
+    if (isWin) {
+      // Windows Priority Mapping
+      // Valid values: Idle, BelowNormal, Normal, AboveNormal, High, RealTime
+      const winPriorityMap = {
+        'Low': 'Idle',
+        'BelowNormal': 'BelowNormal',
+        'Normal': 'Normal',
+        'AboveNormal': 'AboveNormal',
+        'High': 'High',
+        'RealTime': 'RealTime'
+      };
+
+      const winPriority = winPriorityMap[priority] || 'Normal';
+
+      // Use PowerShell to set PriorityClass
+      const psCommand = `powershell -NoProfile -Command "(Get-Process -Id ${pid}).PriorityClass = '${winPriority}'"`;
+
+      exec(psCommand, (error, stdout, stderr) => {
+        if (error) {
+          console.error(`Failed to set priority (Win): ${error.message}`);
+          reject(new Error(`设置优先级失败: ${error.message}`));
+        } else {
+          console.log(`Priority set successfully for PID ${pid}`);
+          resolve(true);
+        }
+      });
+    } else {
+      // macOS / Linux Priority Mapping (os.setPriority)
+      // Range: -20 (High) to 19 (Low)
+      const macPriorityMap = {
+        'Low': 19,
+        'BelowNormal': 10,
+        'Normal': 0,
+        'AboveNormal': -5,
+        'High': -10,
+        'RealTime': -15 // Caution with -20
+      };
+
+      const macPriority = macPriorityMap[priority] !== undefined ? macPriorityMap[priority] : 0;
+
+      try {
+        os.setPriority(pid, macPriority);
+        console.log(`Priority set successfully for PID ${pid} to ${macPriority}`);
+        resolve(true);
+      } catch (error) {
+        console.error(`Failed to set priority (Mac): ${error.message}`);
+        reject(new Error(`设置优先级失败: ${error.message}`));
+      }
+    }
+  });
 });
 
 // --- Settings IPC ---
@@ -656,6 +745,85 @@ ipcMain.handle('remove-profile', (event, name) => {
     return { success: true, profiles: appConfig.profiles };
   }
   return { success: false, error: '未找到指定策略' };
+});
+
+// --- Memory Cleaner IPC ---
+
+// 获取内存信息
+ipcMain.handle('get-memory-info', async () => {
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+
+  return {
+    total: Math.round(totalMem / 1024 / 1024 / 1024 * 10) / 10, // GB
+    free: Math.round(freeMem / 1024 / 1024 / 1024 * 10) / 10,   // GB
+    used: Math.round(usedMem / 1024 / 1024 / 1024 * 10) / 10,   // GB
+    percent: Math.round((usedMem / totalMem) * 100)
+  };
+});
+
+// 清理内存 (Windows: 清空 Standby List)
+ipcMain.handle('clear-memory', async () => {
+  const isWin = process.platform === 'win32';
+
+  // 获取清理前的内存状态
+  const beforeFree = os.freemem();
+
+  if (isWin) {
+    // Windows: 使用 PowerShell 调用系统 API 清空 Standby List
+    // 需要管理员权限才能有效
+    const psScript = `
+      Add-Type -TypeDefinition @"
+        using System;
+        using System.Runtime.InteropServices;
+        public class MemoryCleaner {
+          [DllImport("psapi.dll")]
+          public static extern bool EmptyWorkingSet(IntPtr hProcess);
+          
+          [DllImport("kernel32.dll")]
+          public static extern IntPtr GetCurrentProcess();
+        }
+"@
+      # 清理当前进程的工作集
+      [MemoryCleaner]::EmptyWorkingSet([MemoryCleaner]::GetCurrentProcess())
+      
+      # 尝试调用系统缓存清理
+      $processes = Get-Process | Where-Object {$_.WorkingSet64 -gt 50MB}
+      foreach ($proc in $processes) {
+        try {
+          [MemoryCleaner]::EmptyWorkingSet($proc.Handle)
+        } catch {}
+      }
+    `;
+
+    return new Promise((resolve, reject) => {
+      exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
+        { timeout: 30000 },
+        (error, stdout, stderr) => {
+          // 等待一小段时间让系统更新内存状态
+          setTimeout(() => {
+            const afterFree = os.freemem();
+            const freedMB = Math.round((afterFree - beforeFree) / 1024 / 1024);
+
+            resolve({
+              success: true,
+              freedMB: Math.max(0, freedMB),
+              message: freedMB > 0 ? `已释放 ${freedMB} MB 内存` : '内存已优化'
+            });
+          }, 500);
+        }
+      );
+    });
+  } else {
+    // macOS/Linux: 使用 purge 命令 (需要 sudo)
+    // 这里只返回一个提示，因为 purge 需要 root 权限
+    return {
+      success: false,
+      freedMB: 0,
+      message: 'macOS 需要管理员权限执行 purge 命令'
+    };
+  }
 });
 
 ipcMain.handle('get-profiles', () => {

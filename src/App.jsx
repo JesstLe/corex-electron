@@ -20,6 +20,7 @@ function App() {
   const [status, setStatus] = useState('standby');
   const [primaryCore, setPrimaryCore] = useState('auto');
   const [settings, setSettings] = useState({});
+  const [priority, setPriority] = useState('Normal');
   const [toasts, setToasts] = useState([]);
 
   const showToast = (message, type = 'success', duration = 3000) => {
@@ -185,15 +186,27 @@ function App() {
 
     try {
       if (window.electron) {
+        // 1. 设置 CPU 亲和性
         const result = await window.electron.setAffinity(selectedPid, mask.toString(), mode);
+
+        // 2. 设置进程优先级
+        let prioritySuccess = true;
+        try {
+          await window.electron.setProcessPriority(selectedPid, priority);
+        } catch (e) {
+          console.error(`Priority set failed for ${selectedPid}`, e);
+          prioritySuccess = false;
+        }
+
         if (result.success) {
           setStatus('active');
-          showToast(`已应用到进程 ${selectedPid}`, 'success');
+          const statusMsg = prioritySuccess ? ` | 优先级: ${priority}` : ' (优先级设置失败)';
+          showToast(`已应用到进程 ${selectedPid}${statusMsg}`, 'success');
         } else {
           showToast(result.error || '设置失败', 'error');
         }
       } else {
-        console.log(`Affinity: PID=${selectedPid}, Mask=${mask}, Mode=${mode}`);
+        console.log(`Affinity: PID=${selectedPid}, Mask=${mask}, Mode=${mode}, Priority=${priority}`);
         setStatus('active');
         showToast(`已应用到进程 ${selectedPid}`, 'success');
       }
@@ -235,7 +248,8 @@ function App() {
     const profile = {
       name: process.name,
       affinity: mask.toString(),
-      mode: mode
+      mode: mode,
+      priority: priority // 保存优先级
     };
 
     try {
@@ -281,7 +295,10 @@ function App() {
     }
   };
 
-  const handleStop = () => setStatus('standby');
+  const handleStop = () => {
+    setStatus('standby');
+    setPriority('Normal'); // 重置优先级
+  };
 
   const coreCount = cpuInfo?.cores || 16;
   const cores = Array.from({ length: coreCount }, (_, i) => i);
@@ -366,6 +383,8 @@ function App() {
             onStop={handleStop}
             onSaveProfile={handleSaveProfile}
             cpuInfo={cpuInfo}
+            priority={priority}
+            onPriorityChange={setPriority}
           />
         </div>
       </div>

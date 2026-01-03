@@ -13,4 +13,7 @@ contextBridge.exposeInMainWorld('electron', {
   addProfile: (profile) => ipcRenderer.invoke('add-profile', profile),
   removeProfile: (name) => ipcRenderer.invoke('remove-profile', name),
   getProfiles: () => ipcRenderer.invoke('get-profiles'),
+  setProcessPriority: (pid, priority) => ipcRenderer.invoke('set-process-priority', { pid, priority }),
+  getMemoryInfo: () => ipcRenderer.invoke('get-memory-info'),
+  clearMemory: () => ipcRenderer.invoke('clear-memory'),
 });
