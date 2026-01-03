@@ -20,7 +20,43 @@ const DEFAULT_CONFIG = {
   launchOnStartup: false,
   closeToTray: false,
   cpuAffinityMode: 'dynamic',
-  profiles: [] // 自动化策略 [{ name: 'cs2.exe', affinity: 'mask_str', mode: 'dynamic' }]
+  profiles: [], // 自动化策略 [{ name: 'cs2.exe', affinity: 'mask_str', mode: 'dynamic', priority: 'High' }]
+
+  // Process Lasso 风格的默认规则
+  defaultRules: {
+    enabled: false,           // 主开关
+    gameMask: null,           // 游戏进程核心掩码 (P-Core/CCD0)，null = 自动计算
+    systemMask: null,         // 系统进程核心掩码 (E-Core/CCD1)，null = 自动计算
+    gamePriority: 'High',
+    systemPriority: 'BelowNormal'
+  },
+
+  // 已知游戏列表
+  gameList: [
+    'cs2.exe', 'csgo.exe', 'valorant.exe', 'valorant-win64-shipping.exe',
+    'leagueclient.exe', 'league of legends.exe',
+    'gta5.exe', 'gtav.exe', 'playgta5.exe',
+    'fortnite.exe', 'fortniteclient-win64-shipping.exe',
+    'overwatch.exe', 'overwatch 2.exe',
+    'apex_legends.exe', 'r5apex.exe',
+    'pubg.exe', 'tslgame.exe',
+    'dota2.exe', 'destiny2.exe',
+    'minecraft.exe', 'javaw.exe',
+    'cod.exe', 'modernwarfare.exe', 'blackopscoldwar.exe',
+    'eldenring.exe', 'darksouls3.exe',
+    'cyberpunk2077.exe', 'witcher3.exe',
+    'baldursgate3.exe', 'bg3.exe'
+  ],
+
+  // 排除列表 - 永不处理的进程
+  excludeList: [
+    'system', 'idle', 'registry', 'smss.exe', 'csrss.exe', 'wininit.exe',
+    'services.exe', 'lsass.exe', 'svchost.exe', 'dwm.exe', 'explorer.exe',
+    'winlogon.exe', 'fontdrvhost.exe', 'sihost.exe', 'taskhostw.exe',
+    'runtimebroker.exe', 'searchhost.exe', 'startmenuexperiencehost.exe',
+    'textinputhost.exe', 'ctfmon.exe', 'conhost.exe', 'dllhost.exe',
+    'audiodg.exe', 'spoolsv.exe', 'wudfhost.exe'
+  ]
 };
 
 let appConfig = { ...DEFAULT_CONFIG };
@@ -81,8 +117,6 @@ function stopProcessMonitor() {
 }
 
 async function scanAndApplyProfiles() {
-  if (!appConfig.profiles || appConfig.profiles.length === 0) return;
-
   // 1. 获取所有运行中的进程
   const processes = await getProcessesList().catch(err => {
     console.warn("监控扫描失败:", err.message);
@@ -91,34 +125,70 @@ async function scanAndApplyProfiles() {
 
   if (processes.length === 0) return;
 
-  // 2. 遍历检查是否匹配策略
+  // 计算默认掩码（如果未设置）
+  const cpuCores = os.cpus().length;
+  const halfCores = Math.floor(cpuCores / 2);
+
+  // 游戏掩码：前半部分核心 (P-Core / CCD0)
+  const defaultGameMask = ((1n << BigInt(halfCores)) - 1n).toString();
+  // 系统掩码：后半部分核心 (E-Core / CCD1)
+  const defaultSystemMask = (((1n << BigInt(cpuCores)) - 1n) ^ ((1n << BigInt(halfCores)) - 1n)).toString();
+
+  const gameMask = appConfig.defaultRules?.gameMask || defaultGameMask;
+  const systemMask = appConfig.defaultRules?.systemMask || defaultSystemMask;
+  const gamePriority = appConfig.defaultRules?.gamePriority || 'High';
+  const systemPriority = appConfig.defaultRules?.systemPriority || 'BelowNormal';
+  const rulesEnabled = appConfig.defaultRules?.enabled === true;
+
+  // 构建游戏名称集合（包括 gameList 和 profiles 中的游戏）
+  const gameNames = new Set([
+    ...(appConfig.gameList || []).map(n => n.toLowerCase()),
+    ...(appConfig.profiles || []).map(p => p.name.toLowerCase())
+  ]);
+
+  // 构建排除名称集合
+  const excludeNames = new Set((appConfig.excludeList || []).map(n => n.toLowerCase()));
+
+  // 2. 遍历检查每个进程
   for (const proc of processes) {
     // 忽略已处理的 PID
     if (handledPids.has(proc.pid)) continue;
 
-    // 查找匹配的策略
-    const profile = appConfig.profiles.find(p =>
-      p.name.toLowerCase() === proc.name.toLowerCase() && p.enabled !== false
+    // 忽略 PID 很小的系统进程
+    if (proc.pid < 10) continue;
+
+    const procNameLower = proc.name.toLowerCase();
+
+    // 检查是否在排除列表
+    if (excludeNames.has(procNameLower)) continue;
+
+    // 优先级 1: 检查是否有保存的 Profile
+    const profile = (appConfig.profiles || []).find(p =>
+      p.name.toLowerCase() === procNameLower && p.enabled !== false
     );
 
     if (profile) {
-      console.log(`[Auto] Detected ${proc.name} (PID: ${proc.pid}). Applying profile...`);
-      // 3. 应用策略
-      setAffinity(proc.pid, profile.affinity, profile.mode || 'dynamic')
-        .then(result => {
-          if (result.success) {
-            console.log(`[Auto] Successfully applied profile to PID ${proc.pid}`);
-            handledPids.add(proc.pid);
-          } else {
-            console.warn(`[Auto] Failed to apply profile to PID ${proc.pid}: ${result.error}`);
-          }
-        })
-        .catch(err => console.error(`[Auto] Error setting affinity for ${proc.pid}:`, err));
+      // 应用保存的策略
+      console.log(`[Auto] Detected ${proc.name} (PID: ${proc.pid}). Applying saved profile...`);
+      applyAffinityAndPriority(proc.pid, profile.affinity, profile.mode || 'dynamic', profile.priority || gamePriority);
+      continue;
+    }
+
+    // 优先级 2: 如果启用了默认规则
+    if (rulesEnabled) {
+      if (gameNames.has(procNameLower)) {
+        // 是游戏进程 -> 使用游戏掩码
+        console.log(`[Auto] Game detected: ${proc.name} (PID: ${proc.pid}). Applying game rules...`);
+        applyAffinityAndPriority(proc.pid, gameMask, 'dynamic', gamePriority);
+      } else {
+        // 非游戏进程 -> 使用系统掩码
+        console.log(`[Auto] System process: ${proc.name} (PID: ${proc.pid}). Applying system rules...`);
+        applyAffinityAndPriority(proc.pid, systemMask, 'dynamic', systemPriority);
+      }
     }
   }
 
-  // 可选：清理不再存在的 PID 的 handledPids 记录
-  // 为了性能，可以只在 Set 很大时清理，或者每隔几次清理
+  // 清理不再存在的 PID 记录
   if (handledPids.size > 2000) {
     const currentPids = new Set(processes.map(p => p.pid));
     for (const pid of handledPids) {
@@ -127,6 +197,22 @@ async function scanAndApplyProfiles() {
       }
     }
   }
+}
+
+// 辅助函数：应用亲和性和优先级
+function applyAffinityAndPriority(pid, mask, mode, priority) {
+  setAffinity(pid, mask, mode)
+    .then(result => {
+      if (result.success) {
+        console.log(`[Auto] Successfully applied to PID ${pid}`);
+        handledPids.add(pid);
+        // 单独设置优先级（如果 setAffinity 内部没处理的话）
+        // 注意：当前 setAffinity 已经内置了优先级设置逻辑
+      } else {
+        console.warn(`[Auto] Failed for PID ${pid}: ${result.error}`);
+      }
+    })
+    .catch(err => console.error(`[Auto] Error for ${pid}:`, err));
 }
 
 // 复用获取进程列表的逻辑
@@ -201,6 +287,7 @@ function setAffinity(pid, coreMask, mode = 'dynamic') {
 
       // Apply Mode Logic
       if (mode === 'static') {
+        // 固定绑核：锁定到单个核心（最低位），高优先级
         priorityClass = 'High';
         let lowestBit = 0n;
         for (let i = 0n; i < 64n; i++) {
@@ -212,30 +299,32 @@ function setAffinity(pid, coreMask, mode = 'dynamic') {
         if (lowestBit !== 0n) finalMask = lowestBit;
       }
       else if (mode === 'd2') {
+        // 均衡调度：保持完整核心掩码，使用较低优先级
+        // 进程可以在所有选中核心上运行，但在系统繁忙时会让步
         priorityClass = 'BelowNormal';
-        const mask = BigInt(coreMask);
-        const selectedIndices = [];
-        for (let i = 0; i < 64; i++) {
-          if ((mask & (1n << BigInt(i))) !== 0n) selectedIndices.push(i);
-        }
-        if (selectedIndices.length > 1) {
-          const mid = Math.floor(selectedIndices.length / 2);
-          const secondHalf = selectedIndices.slice(mid);
-          let newMask = 0n;
-          secondHalf.forEach(idx => newMask |= (1n << BigInt(idx)));
-          finalMask = newMask;
-        }
+        // 保持用户选择的完整掩码不变
+        finalMask = mask;
       }
       else if (mode === 'd3') {
+        // 节能优先：优先使用高编号核心（通常是 E-Core），最低优先级
+        // 在 Intel 混合架构中，高编号核心通常是效能核心
         priorityClass = 'Idle';
-        let highestBit = 0n;
-        for (let i = 63n; i >= 0n; i--) {
-          if ((mask & (1n << i)) !== 0n) {
-            highestBit = (1n << i);
-            break;
-          }
+
+        // 找出所有选中的核心
+        const selectedCores = [];
+        for (let i = 0; i < 64; i++) {
+          if ((mask & (1n << BigInt(i))) !== 0n) selectedCores.push(i);
         }
-        if (highestBit !== 0n) finalMask = highestBit;
+
+        if (selectedCores.length > 1) {
+          // 只使用后半部分核心（更可能是 E-Core）
+          const halfIndex = Math.ceil(selectedCores.length / 2);
+          const efficiencyCores = selectedCores.slice(halfIndex);
+          let newMask = 0n;
+          efficiencyCores.forEach(idx => newMask |= (1n << BigInt(idx)));
+          finalMask = newMask;
+        }
+        // 如果只选了一个核心，保持不变
       }
 
       const safePid = Math.floor(pid);
@@ -699,8 +788,14 @@ ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
 ipcMain.handle('get-settings', () => appConfig);
 
 ipcMain.handle('set-setting', (event, key, value) => {
-  // 安全检查
-  if (['width', 'height', 'x', 'y', 'launchOnStartup', 'closeToTray', 'cpuAffinityMode'].includes(key)) {
+  // 安全检查 - 允许的配置项
+  const allowedKeys = [
+    'width', 'height', 'x', 'y',
+    'launchOnStartup', 'closeToTray', 'cpuAffinityMode',
+    'defaultRules', 'gameList', 'excludeList'
+  ];
+
+  if (allowedKeys.includes(key)) {
     appConfig[key] = value;
     saveConfig();
     if (key === 'launchOnStartup') updateLoginItemSettings();

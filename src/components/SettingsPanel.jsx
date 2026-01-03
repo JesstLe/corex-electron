@@ -45,8 +45,8 @@ function MemoryCleaner() {
               {memInfo.used} / {memInfo.total} GB
             </span>
             <span className={`text-xs px-1.5 py-0.5 rounded ${memInfo.percent > 80 ? 'bg-red-100 text-red-600' :
-                memInfo.percent > 60 ? 'bg-orange-100 text-orange-600' :
-                  'bg-green-100 text-green-600'
+              memInfo.percent > 60 ? 'bg-orange-100 text-orange-600' :
+                'bg-green-100 text-green-600'
               }`}>
               {memInfo.percent}%
             </span>
@@ -54,8 +54,8 @@ function MemoryCleaner() {
           <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
             <div
               className={`h-full transition-all duration-300 ${memInfo.percent > 80 ? 'bg-red-500' :
-                  memInfo.percent > 60 ? 'bg-orange-500' :
-                    'bg-green-500'
+                memInfo.percent > 60 ? 'bg-orange-500' :
+                  'bg-green-500'
                 }`}
               style={{ width: `${memInfo.percent}%` }}
             ></div>
@@ -67,8 +67,8 @@ function MemoryCleaner() {
         onClick={handleClear}
         disabled={cleaning}
         className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5 ${cleaning
-            ? 'bg-slate-100 text-slate-400 cursor-wait'
-            : 'bg-violet-50 text-violet-600 hover:bg-violet-100'
+          ? 'bg-slate-100 text-slate-400 cursor-wait'
+          : 'bg-violet-50 text-violet-600 hover:bg-violet-100'
           }`}
       >
         <RefreshCw size={14} className={cleaning ? 'animate-spin' : ''} />
@@ -97,10 +97,10 @@ export default function SettingsPanel({
   const coreOptions = Array.from({ length: coreCount }, (_, i) => i);
 
   const modes = [
-    { id: 'dynamic', label: '自动分配', icon: Zap, desc: '智能调度' },
-    { id: 'static', label: '固定绑核', icon: Lock, desc: '锁定运行' },
-    { id: 'd2', label: '均衡调度', icon: Scale, desc: '性能均衡' },
-    { id: 'd3', label: '节能优先', icon: Leaf, desc: '低功耗' },
+    { id: 'dynamic', label: '自动分配', icon: Zap, desc: '正常优先级' },
+    { id: 'static', label: '固定绑核', icon: Lock, desc: '单核高优先级' },
+    { id: 'd2', label: '均衡调度', icon: Scale, desc: '全核较低优先级' },
+    { id: 'd3', label: '节能优先', icon: Leaf, desc: 'E-Core最低优先级' },
   ];
 
   return (
@@ -194,6 +194,44 @@ export default function SettingsPanel({
                 </button>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* 默认规则 (Process Lasso 风格) */}
+      <div className="glass rounded-2xl p-5 shadow-soft">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h4 className="font-medium text-slate-700">默认规则</h4>
+            <p className="text-xs text-slate-400 mt-0.5">自动管理进程核心分配</p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!settings.defaultRules?.enabled}
+              onChange={(e) => onSettingChange('defaultRules', {
+                ...settings.defaultRules,
+                enabled: e.target.checked
+              })}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+          </label>
+        </div>
+
+        {settings.defaultRules?.enabled && (
+          <div className="space-y-3 pt-3 border-t border-slate-100">
+            <div className="flex items-center gap-3 text-sm">
+              <div className="w-2 h-2 rounded-full bg-green-500"></div>
+              <span className="text-slate-600">游戏进程 → P-Core / CCD0 (高优先级)</span>
+            </div>
+            <div className="flex items-center gap-3 text-sm">
+              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+              <span className="text-slate-600">其他进程 → E-Core / CCD1 (低优先级)</span>
+            </div>
+            <div className="text-xs text-slate-400 mt-2">
+              已识别游戏: {(settings.gameList || []).length} 个
+            </div>
           </div>
         )}
       </div>
