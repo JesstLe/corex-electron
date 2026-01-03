@@ -4,7 +4,6 @@ import Header from './components/Header';
 import ProcessScanner from './components/ProcessScanner';
 import CoreGrid from './components/CoreGrid';
 import ControlBar from './components/ControlBar';
-import MemoryCleaner from './components/MemoryCleaner';
 import SettingsPanel from './components/SettingsPanel';
 import SystemOptimizer from './components/SystemOptimizer';
 import Toast, { ToastContainer, toast } from './components/Toast';
