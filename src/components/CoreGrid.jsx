@@ -9,12 +9,32 @@ export default function CoreGrid({
   onSelectNone,
   onSelectPhysical,
   onSelectSMT,
-  ccdConfig,
-  onSelectCcd0,
-  onSelectCcd1
+  cpuArch,
+  onSelectPartition0,
+  onSelectPartition1
 }) {
-  const isDualCcd = ccdConfig?.isDualCcd;
-  const halfCores = Math.floor(cores.length / 2);
+  // 判断是否为双分区架构
+  const isDualPartition = cpuArch?.type === 'AMD_CCD' && cpuArch.isDualCcd ||
+    cpuArch?.type === 'INTEL_HYBRID' && cpuArch.isHybrid;
+
+  // 获取分区信息
+  let partition0Label, partition1Label, partition0Color, partition1Color, partition0Count;
+
+  if (cpuArch?.type === 'AMD_CCD' && cpuArch.isDualCcd) {
+    // AMD 双 CCD
+    partition0Label = 'CCD0';
+    partition1Label = 'CCD1';
+    partition0Color = 'blue';
+    partition1Color = 'purple';
+    partition0Count = Math.floor(cores.length / 2);
+  } else if (cpuArch?.type === 'INTEL_HYBRID' && cpuArch.isHybrid) {
+    // Intel 混合架构
+    partition0Label = 'P-Core';
+    partition1Label = 'E-Core';
+    partition0Color = 'emerald';
+    partition1Color = 'orange';
+    partition0Count = cpuArch.pCores * 2; // P核支持超线程
+  }
 
   return (
     <div className="glass rounded-2xl p-6 shadow-soft">
@@ -27,27 +47,38 @@ export default function CoreGrid({
             <h3 className="font-semibold text-slate-700">处理器调度中心</h3>
             <p className="text-xs text-slate-400">
               {cores.length} 个逻辑核心
-              {isDualCcd && ` · 双CCD架构`}
-              {ccdConfig?.has3DCache && ` · 3D V-Cache`}
+              {cpuArch?.type === 'AMD_CCD' && cpuArch.isDualCcd && ` · 双CCD架构`}
+              {cpuArch?.type === 'INTEL_HYBRID' && cpuArch.isHybrid && ` · 混合架构 (${cpuArch.pCores}P+${cpuArch.eCores}E)`}
+              {cpuArch?.has3DCache && ` · 3D V-Cache`}
             </p>
           </div>
         </div>
 
         <div className="flex gap-2 flex-wrap justify-end">
-          {/* CCD 选择按钮（仅双CCD处理器显示） */}
-          {isDualCcd && (
+          {/* 分区选择按钮（双分区架构显示） */}
+          {isDualPartition && (
             <>
               <button
-                onClick={onSelectCcd0}
-                className="px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors border border-blue-200"
+                onClick={onSelectPartition0}
+                className={`px-3 py-1.5 text-xs font-medium text-${partition0Color}-600 bg-${partition0Color}-50 hover:bg-${partition0Color}-100 rounded-lg transition-colors border border-${partition0Color}-200`}
+                style={{
+                  color: partition0Color === 'emerald' ? '#059669' : partition0Color === 'blue' ? '#2563eb' : undefined,
+                  backgroundColor: partition0Color === 'emerald' ? '#d1fae5' : partition0Color === 'blue' ? '#dbeafe' : undefined,
+                  borderColor: partition0Color === 'emerald' ? '#6ee7b7' : partition0Color === 'blue' ? '#93c5fd' : undefined,
+                }}
               >
-                CCD0
+                {partition0Label}
               </button>
               <button
-                onClick={onSelectCcd1}
-                className="px-3 py-1.5 text-xs font-medium text-purple-600 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors border border-purple-200"
+                onClick={onSelectPartition1}
+                className={`px-3 py-1.5 text-xs font-medium text-${partition1Color}-600 bg-${partition1Color}-50 hover:bg-${partition1Color}-100 rounded-lg transition-colors border border-${partition1Color}-200`}
+                style={{
+                  color: partition1Color === 'orange' ? '#ea580c' : partition1Color === 'purple' ? '#9333ea' : undefined,
+                  backgroundColor: partition1Color === 'orange' ? '#ffedd5' : partition1Color === 'purple' ? '#f3e8ff' : undefined,
+                  borderColor: partition1Color === 'orange' ? '#fdba74' : partition1Color === 'purple' ? '#d8b4fe' : undefined,
+                }}
               >
-                CCD1
+                {partition1Label}
               </button>
               <div className="w-px h-6 bg-slate-200 mx-1"></div>
             </>
@@ -59,36 +90,50 @@ export default function CoreGrid({
         </div>
       </div>
 
-      {/* CCD 分区显示 */}
-      {isDualCcd ? (
+      {/* 分区显示 */}
+      {isDualPartition ? (
         <div className="space-y-4">
-          {/* CCD0 */}
+          {/* 分区 0 (CCD0 或 P-Core) */}
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full bg-blue-500"></div>
-              <span className="text-xs font-medium text-blue-600">CCD0</span>
-              <span className="text-xs text-slate-400">· 核心 0-{halfCores - 1}</span>
+              <div className={`w-2 h-2 rounded-full bg-${partition0Color}-500`} style={{
+                backgroundColor: partition0Color === 'emerald' ? '#10b981' : partition0Color === 'blue' ? '#3b82f6' : undefined
+              }}></div>
+              <span className={`text-xs font-medium text-${partition0Color}-600`} style={{
+                color: partition0Color === 'emerald' ? '#059669' : partition0Color === 'blue' ? '#2563eb' : undefined
+              }}>{partition0Label}</span>
+              <span className="text-xs text-slate-400">· 核心 0-{partition0Count - 1}</span>
+              {cpuArch?.type === 'INTEL_HYBRID' && (
+                <span className="text-xs text-slate-400">({cpuArch.pCores}核 · 支持超线程)</span>
+              )}
             </div>
             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-              {cores.slice(0, halfCores).map((coreIndex) => renderCoreButton(coreIndex, 'ccd0'))}
+              {cores.slice(0, partition0Count).map((coreIndex) => renderCoreButton(coreIndex, 'partition0', partition0Color))}
             </div>
           </div>
 
-          {/* CCD1 */}
+          {/* 分区 1 (CCD1 或 E-Core) */}
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <div className="w-2 h-2 rounded-full bg-purple-500"></div>
-              <span className="text-xs font-medium text-purple-600">CCD1</span>
-              <span className="text-xs text-slate-400">· 核心 {halfCores}-{cores.length - 1}</span>
+              <div className={`w-2 h-2 rounded-full bg-${partition1Color}-500`} style={{
+                backgroundColor: partition1Color === 'orange' ? '#f97316' : partition1Color === 'purple' ? '#a855f7' : undefined
+              }}></div>
+              <span className={`text-xs font-medium text-${partition1Color}-600`} style={{
+                color: partition1Color === 'orange' ? '#ea580c' : partition1Color === 'purple' ? '#9333ea' : undefined
+              }}>{partition1Label}</span>
+              <span className="text-xs text-slate-400">· 核心 {partition0Count}-{cores.length - 1}</span>
+              {cpuArch?.type === 'INTEL_HYBRID' && (
+                <span className="text-xs text-slate-400">({cpuArch.eCores}核 · 无超线程)</span>
+              )}
             </div>
             <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-              {cores.slice(halfCores).map((coreIndex) => renderCoreButton(coreIndex, 'ccd1'))}
+              {cores.slice(partition0Count).map((coreIndex) => renderCoreButton(coreIndex, 'partition1', partition1Color))}
             </div>
           </div>
         </div>
       ) : (
         <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-          {cores.map((coreIndex) => renderCoreButton(coreIndex, null))}
+          {cores.map((coreIndex) => renderCoreButton(coreIndex, null, null))}
         </div>
       )}
 
@@ -105,16 +150,20 @@ export default function CoreGrid({
           <div className="w-2 h-2 rounded bg-pink-400"></div>
           <span>T = 逻辑线程</span>
         </div>
-        {isDualCcd && (
+        {isDualPartition && (
           <>
             <div className="w-px h-3 bg-slate-200"></div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded bg-blue-500"></div>
-              <span>CCD0</span>
+              <div className={`w-2 h-2 rounded bg-${partition0Color}-500`} style={{
+                backgroundColor: partition0Color === 'emerald' ? '#10b981' : partition0Color === 'blue' ? '#3b82f6' : undefined
+              }}></div>
+              <span>{partition0Label}</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <div className="w-2 h-2 rounded bg-purple-500"></div>
-              <span>CCD1</span>
+              <div className={`w-2 h-2 rounded bg-${partition1Color}-500`} style={{
+                backgroundColor: partition1Color === 'orange' ? '#f97316' : partition1Color === 'purple' ? '#a855f7' : undefined
+              }}></div>
+              <span>{partition1Label}</span>
             </div>
           </>
         )}
@@ -122,16 +171,24 @@ export default function CoreGrid({
     </div>
   );
 
-  function renderCoreButton(coreIndex, ccdType) {
+  function renderCoreButton(coreIndex, partitionType, partitionColor) {
     const isSelected = selectedCores.includes(coreIndex);
     const isPhysical = coreIndex % 2 === 0;
 
-    // CCD 专属颜色
+    // 分区专属颜色
     let selectedBg = 'bg-gradient-to-br from-violet-500 to-pink-500';
-    if (ccdType === 'ccd0' && isSelected) {
-      selectedBg = 'bg-gradient-to-br from-blue-500 to-cyan-500';
-    } else if (ccdType === 'ccd1' && isSelected) {
-      selectedBg = 'bg-gradient-to-br from-purple-500 to-pink-500';
+    if (partitionType === 'partition0' && isSelected) {
+      if (partitionColor === 'blue') {
+        selectedBg = 'bg-gradient-to-br from-blue-500 to-cyan-500';
+      } else if (partitionColor === 'emerald') {
+        selectedBg = 'bg-gradient-to-br from-emerald-500 to-teal-500';
+      }
+    } else if (partitionType === 'partition1' && isSelected) {
+      if (partitionColor === 'purple') {
+        selectedBg = 'bg-gradient-to-br from-purple-500 to-pink-500';
+      } else if (partitionColor === 'orange') {
+        selectedBg = 'bg-gradient-to-br from-orange-500 to-amber-500';
+      }
     }
 
     return (
@@ -151,3 +208,4 @@ export default function CoreGrid({
     );
   }
 }
+

@@ -5,11 +5,11 @@ import CoreGrid from './components/CoreGrid';
 import SettingsPanel from './components/SettingsPanel';
 import ControlBar from './components/ControlBar';
 import { ToastContainer } from './components/Toast';
-import { getCcdConfig, generateCcdMapping } from './data/cpuDatabase';
+import { getCpuArchitecture } from './data/cpuDatabase';
 
 function App() {
   const [cpuInfo, setCpuInfo] = useState(null);
-  const [ccdConfig, setCcdConfig] = useState(null);
+  const [cpuArch, setCpuArch] = useState(null);
   const [processes, setProcesses] = useState([]);
   const [scanning, setScanning] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -46,9 +46,9 @@ function App() {
           const savedSettings = await window.electron.getSettings();
           setSettings(savedSettings || {});
 
-          // 检测 AMD CCD 配置
-          const ccd = getCcdConfig(info.model);
-          setCcdConfig(ccd);
+          // 检测 CPU 架构（AMD CCD 或 Intel 混合架构）
+          const arch = getCpuArchitecture(info.model);
+          setCpuArch(arch);
 
           const physicalCores = Array.from({ length: info.cores }, (_, i) => i).filter(i => i % 2 === 0);
           setSelectedCores(physicalCores);
@@ -56,8 +56,8 @@ function App() {
           // 预览模式 - 模拟双CCD处理器
           const mockInfo = { model: 'AMD Ryzen 9 7950X3D (Preview)', cores: 16 };
           setCpuInfo(mockInfo);
-          const ccd = getCcdConfig(mockInfo.model);
-          setCcdConfig(ccd);
+          const arch = getCpuArchitecture(mockInfo.model);
+          setCpuArch(arch);
           setSelectedCores([0, 2, 4, 6, 8, 10, 12, 14]);
         }
       } catch (err) {
@@ -116,17 +116,32 @@ function App() {
   const selectAll = createCoreSelector(() => true);
   const selectNone = () => setSelectedCores([]);
 
-  // CCD 分区选择
-  const selectCcd0 = () => {
+  // CCD/混合架构分区选择
+  const selectPartition0 = () => {
     const count = cpuInfo?.cores || 16;
-    const halfCores = Math.floor(count / 2);
-    setSelectedCores(Array.from({ length: halfCores }, (_, i) => i));
+    if (cpuArch?.type === 'INTEL_HYBRID' && cpuArch.isHybrid) {
+      // Intel: 选择 P-Core (前 pCores*2 个线程)
+      const pThreads = cpuArch.pCores * 2;
+      setSelectedCores(Array.from({ length: pThreads }, (_, i) => i));
+    } else {
+      // AMD 或其他: 选择前半部分
+      const halfCores = Math.floor(count / 2);
+      setSelectedCores(Array.from({ length: halfCores }, (_, i) => i));
+    }
   };
 
-  const selectCcd1 = () => {
+  const selectPartition1 = () => {
     const count = cpuInfo?.cores || 16;
-    const halfCores = Math.floor(count / 2);
-    setSelectedCores(Array.from({ length: halfCores }, (_, i) => i + halfCores));
+    if (cpuArch?.type === 'INTEL_HYBRID' && cpuArch.isHybrid) {
+      // Intel: 选择 E-Core (从 pCores*2 开始)
+      const pThreads = cpuArch.pCores * 2;
+      const eThreads = cpuArch.eCores;
+      setSelectedCores(Array.from({ length: eThreads }, (_, i) => i + pThreads));
+    } else {
+      // AMD 或其他: 选择后半部分
+      const halfCores = Math.floor(count / 2);
+      setSelectedCores(Array.from({ length: halfCores }, (_, i) => i + halfCores));
+    }
   };
 
   const handleSettingChange = async (key, value) => {
@@ -324,9 +339,9 @@ function App() {
             onSelectNone={selectNone}
             onSelectPhysical={selectPhysical}
             onSelectSMT={selectSMT}
-            ccdConfig={ccdConfig}
-            onSelectCcd0={selectCcd0}
-            onSelectCcd1={selectCcd1}
+            cpuArch={cpuArch}
+            onSelectPartition0={selectPartition0}
+            onSelectPartition1={selectPartition1}
           />
 
           <SettingsPanel
