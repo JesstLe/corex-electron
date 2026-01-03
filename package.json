@@ -7,7 +7,10 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on tcp:5173 && electron .\"",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "release": "npm version patch && npm run dist",
+    "release:minor": "npm version minor && npm run dist",
+    "release:major": "npm version major && npm run dist"
   },
   "build": {
     "appId": "com.tasknexus.app",
@@ -38,11 +41,12 @@
       ]
     },
     "portable": {
-      "artifactName": "${productName}-${version}-Portable.${ext}"
+      "artifactName": "${productName}-v${version}-Portable.${ext}"
     },
     "mac": {
       "target": "dmg",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "artifactName": "${productName}-v${version}.${ext}"
     }
   },
   "dependencies": {

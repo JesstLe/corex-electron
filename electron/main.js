@@ -470,11 +470,13 @@ ipcMain.handle('get-processes', async () => {
     const isWin = process.platform === 'win32';
 
     if (isWin) {
-      // Use PowerShell to get process info in JSON format (ID, Name, PercentProcessorTime)
-      // Get-CimInstance is more modern and reliable than wmic
+      // 使用 Get-Counter 获取更准确的 CPU 使用率（类似任务管理器）
+      // Get-Counter 返回的 % Processor Time 是所有核心的总和，需要除以核心数
+      const cpuCores = os.cpus().length;
+
+      // 使用 Get-CimInstance 获取进程信息
       const psCommand = `powershell -NoProfile -Command "try { Get-CimInstance Win32_PerfFormattedData_PerfProc_Process | Select-Object Name,IDProcess,PercentProcessorTime | ConvertTo-Json -Compress } catch { Write-Output '[]' }"`;
 
-      // Increase maxBuffer for large process lists
       exec(psCommand, { timeout: 15000, maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
         if (error) {
           console.error('PowerShell Scan Failed:', error.message);
@@ -504,11 +506,13 @@ ipcMain.handle('get-processes', async () => {
           data.forEach(item => {
             const pid = item.IDProcess;
             let name = item.Name;
+
             // Win32_PerfFormattedData_PerfProc_Process.PercentProcessorTime
-            // 已经是归一化的百分比值 (0-100%)
-            // 使用 Math.min 确保不超过 100%（某些极端情况下可能略微超过）
+            // 返回的是所有逻辑处理器的总和（可能超过 100%）
+            // 除以核心数得到与任务管理器一致的百分比 (0-100%)
             const rawCpu = item.PercentProcessorTime || 0;
-            const cpu = Math.min(rawCpu, 100);
+            // 归一化并保留1位小数，向上取整，确保不超过100%
+            const cpu = Math.min(Math.ceil((rawCpu / cpuCores) * 10) / 10, 100);
 
             if (!name || name === '_Total' || name === 'Idle' || !pid || pid <= 0) return;
 
@@ -519,7 +523,6 @@ ipcMain.handle('get-processes', async () => {
               name = name + '.exe';
             }
 
-            // Deduplicate logic could be added here if needed, but for now we push all
             processes.push({ pid, name, cpu });
           });
 
