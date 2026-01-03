@@ -542,7 +542,9 @@ function createTray() {
   if (tray) return;
 
   // 托盘图标路径
-  const iconPath = path.join(__dirname, '../resources/icon.png');
+  const iconPath = app.isPackaged
+    ? path.join(process.resourcesPath, 'icon.png')
+    : path.join(__dirname, '../build/icon.png');
   console.log('Tray icon path:', iconPath);
 
   let image;
