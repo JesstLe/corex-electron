@@ -27,7 +27,7 @@
       }
     ],
     "directories": {
-      "output": "../Task_NeXus_Release_v${version}"
+      "output": "../../Task_NeXus_Release_v${version}"
     },
     "win": {
       "icon": "build/icon.png",
