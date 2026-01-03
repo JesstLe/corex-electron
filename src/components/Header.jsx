@@ -13,7 +13,8 @@ export default function Header({ cpuModel }) {
 
   const handleMinimize = () => window.electron?.minimize();
   const handleToggleMaximize = () => window.electron?.toggleMaximize();
-  const handleClose = () => window.electron?.close();
+  // 使用 quit 替代 close 以实现完全退出
+  const handleClose = () => window.electron?.quit();
 
   return (
     <div className="flex items-center justify-between px-6 py-4 drag bg-white/50 backdrop-blur-md border-b border-slate-200/50">

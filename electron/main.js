@@ -622,10 +622,22 @@ const createWindow = () => {
   createTray();
 };
 
+// 切换主窗口的显示/隐藏状态
+function toggleWindow() {
+  if (mainWindow) {
+    if (mainWindow.isVisible()) {
+      mainWindow.hide();
+    } else {
+      mainWindow.show();
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  }
+}
+
 function createTray() {
   if (tray) return;
 
-  // 托盘图标路径
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'icon.png')
     : path.join(__dirname, '../build/icon.png');
@@ -636,10 +648,10 @@ function createTray() {
     image = nativeImage.createFromPath(iconPath);
     if (image.isEmpty()) {
       console.error('托盘图标加载为空 (Icon is empty):', iconPath);
-      // 创建一个空的 16x16 图标避免报错
-      image = nativeImage.createFromBuffer(Buffer.alloc(0));
+      // Fallback to a tiny transparent image to prevent crash if icon is truly missing
+      image = nativeImage.createFromBuffer(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64'), { width: 1, height: 1 });
     } else {
-      // 统一调整为 small icon for tray (usually 16x16 logic for tray)
+      // Resize for tray, typically 16x16 or 32x32 depending on OS/DPI
       image = image.resize({ width: 16, height: 16 });
     }
   } catch (e) {
@@ -652,14 +664,7 @@ function createTray() {
     tray.setToolTip('Task Nexus');
 
     const contextMenu = Menu.buildFromTemplate([
-      {
-        label: '显示主窗口', click: () => {
-          if (mainWindow) {
-            mainWindow.show();
-            if (mainWindow.isMinimized()) mainWindow.restore();
-          }
-        }
-      },
+      { label: '显示/隐藏主窗口', click: toggleWindow },
       { type: 'separator' },
       {
         label: '退出', click: () => {
@@ -671,17 +676,7 @@ function createTray() {
 
     tray.setContextMenu(contextMenu);
 
-    tray.on('click', () => {
-      if (mainWindow) {
-        if (mainWindow.isVisible()) {
-          mainWindow.hide();
-        } else {
-          mainWindow.show();
-          if (mainWindow.isMinimized()) mainWindow.restore();
-          mainWindow.focus();
-        }
-      }
-    });
+    tray.on('click', toggleWindow);
   } catch (err) {
     console.error("创建托盘对象失败:", err);
   }

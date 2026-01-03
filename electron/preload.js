@@ -6,7 +6,8 @@ contextBridge.exposeInMainWorld('electron', {
   setAffinity: (pid, coreMask, mode) => ipcRenderer.invoke('set-affinity', pid, coreMask, mode),
   minimize: () => ipcRenderer.send('window-minimize'),
   toggleMaximize: () => ipcRenderer.send('window-toggle-maximize'),
-  close: () => ipcRenderer.send('window-close'),
+  // 使用 quit 完全退出应用
+  quit: () => ipcRenderer.send('app-quit'),
   onMaximizedStateChange: (callback) => ipcRenderer.on('window-maximized-state', (_, state) => callback(state)),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   setSetting: (key, value) => ipcRenderer.invoke('set-setting', key, value),
