@@ -16,4 +16,11 @@ contextBridge.exposeInMainWorld('electron', {
   setProcessPriority: (pid, priority) => ipcRenderer.invoke('set-process-priority', { pid, priority }),
   getMemoryInfo: () => ipcRenderer.invoke('get-memory-info'),
   clearMemory: () => ipcRenderer.invoke('clear-memory'),
+  getPowerPlan: () => ipcRenderer.invoke('get-power-plan'),
+  setPowerPlan: (plan) => ipcRenderer.invoke('set-power-plan', plan),
+  importPowerPlan: (path) => ipcRenderer.invoke('import-power-plan', path),
+  openPowerSettings: () => ipcRenderer.invoke('open-power-settings'),
+  listPowerPlans: () => ipcRenderer.invoke('list-power-plans'),
+  setTimerResolution: (periodMs) => ipcRenderer.invoke('set-timer-resolution', periodMs),
+  getTimerResolution: () => ipcRenderer.invoke('get-timer-resolution'),
 });

@@ -84,6 +84,206 @@ function MemoryCleaner() {
   );
 }
 
+// 电源计划控制组件
+function PowerPlanControl() {
+  const [currentPlan, setCurrentPlan] = useState('unknown');
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (window.electron?.getPowerPlan) {
+      window.electron.getPowerPlan().then(r => r.success && setCurrentPlan(r.name));
+    }
+  }, []);
+
+  const switchPlan = async (plan) => {
+    setLoading(true);
+    if (window.electron?.setPowerPlan) {
+      await window.electron.setPowerPlan(plan);
+      const r = await window.electron.getPowerPlan();
+      if (r.success) setCurrentPlan(r.name);
+    }
+    setLoading(false);
+  };
+
+  const plans = [
+    { id: 'balanced', label: '平衡', color: 'bg-blue-500' },
+    { id: 'high_performance', label: '高性能', color: 'bg-orange-500' },
+    { id: 'ultimate', label: '卓越', color: 'bg-red-500' }
+  ];
+
+  const openSettings = () => {
+    window.electron?.openPowerSettings?.();
+  };
+
+  return (
+    <div className="flex items-center gap-2">
+      {plans.map(p => (
+        <button
+          key={p.id}
+          onClick={() => switchPlan(p.id)}
+          disabled={loading}
+          className={`px-2.5 py-1 text-xs rounded-lg transition-all ${currentPlan === p.id
+            ? `${p.color} text-white`
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+        >
+          {p.label}
+        </button>
+      ))}
+      <button
+        onClick={openSettings}
+        className="px-2 py-1 text-xs bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200"
+        title="打开电源设置"
+      >
+        ⚙
+      </button>
+    </div>
+  );
+}
+
+// 电源计划拖放导入组件
+function PowerPlanDropZone() {
+  const [dragging, setDragging] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const powFile = files.find(f => f.name.endsWith('.pow'));
+
+    if (!powFile) {
+      setMessage({ type: 'error', text: '请拖放 .pow 文件' });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+
+    if (window.electron?.importPowerPlan) {
+      const result = await window.electron.importPowerPlan(powFile.path);
+      if (result.success) {
+        setMessage({ type: 'success', text: '导入成功！' });
+      } else {
+        setMessage({ type: 'error', text: result.error || '导入失败' });
+      }
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={handleDrop}
+      className={`mt-3 p-3 border-2 border-dashed rounded-xl text-center text-xs transition-all ${dragging
+        ? 'border-violet-400 bg-violet-50 text-violet-600'
+        : 'border-slate-200 text-slate-400 hover:border-slate-300'
+        }`}
+    >
+      {message ? (
+        <span className={message.type === 'success' ? 'text-green-600' : 'text-red-500'}>
+          {message.text}
+        </span>
+      ) : (
+        <span>拖放 .pow 文件到此处导入电源计划</span>
+      )}
+    </div>
+  );
+}
+
+// 定时器分辨率控制组件 - 支持自定义精度
+function TimerResolutionControl() {
+  const [resolution, setResolution] = useState(0);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (window.electron?.getTimerResolution) {
+      window.electron.getTimerResolution().then(r => setResolution(r.resolution || 0));
+    }
+  }, []);
+
+  const setRes = async (ms) => {
+    setLoading(true);
+    if (window.electron?.setTimerResolution) {
+      await window.electron.setTimerResolution(ms);
+      const r = await window.electron.getTimerResolution();
+      setResolution(r.resolution || 0);
+    }
+    setLoading(false);
+  };
+
+  const options = [
+    { value: 0, label: '关闭' },
+    { value: 1, label: '1ms' },
+    { value: 2, label: '2ms' },
+    { value: 4, label: '4ms' }
+  ];
+
+  return (
+    <div className="flex items-center gap-1">
+      {options.map(o => (
+        <button
+          key={o.value}
+          onClick={() => setRes(o.value)}
+          disabled={loading}
+          className={`px-2 py-1 text-xs rounded-lg transition-all ${resolution === o.value
+            ? 'bg-violet-500 text-white'
+            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+// 游戏列表编辑器组件
+function GameListEditor({ games = [], onUpdate }) {
+  const [newGame, setNewGame] = useState('');
+  const [expanded, setExpanded] = useState(false);
+
+  const addGame = () => {
+    const name = newGame.trim().toLowerCase();
+    if (name && !games.includes(name)) {
+      onUpdate([...games, name]);
+      setNewGame('');
+    }
+  };
+
+  return (
+    <div>
+      <button onClick={() => setExpanded(!expanded)} className="text-xs text-violet-500 hover:underline">
+        {expanded ? '收起' : `查看全部 (${games.length})`}
+      </button>
+      {expanded && (
+        <div className="mt-3 space-y-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={newGame}
+              onChange={(e) => setNewGame(e.target.value)}
+              placeholder="game.exe"
+              className="flex-1 px-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+              onKeyDown={(e) => e.key === 'Enter' && addGame()}
+            />
+            <button onClick={addGame} className="px-3 py-1.5 text-sm bg-violet-500 text-white rounded-lg hover:bg-violet-600">添加</button>
+          </div>
+          <div className="max-h-32 overflow-y-auto space-y-1">
+            {games.slice(0, 15).map(g => (
+              <div key={g} className="flex items-center justify-between px-2 py-1 bg-slate-50 rounded text-xs">
+                <span className="text-slate-600">{g}</span>
+                <button onClick={() => onUpdate(games.filter(x => x !== g))} className="text-slate-400 hover:text-red-500">×</button>
+              </div>
+            ))}
+            {games.length > 15 && <div className="text-xs text-slate-400 text-center">...还有 {games.length - 15} 个</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function SettingsPanel({
   mode,
   onModeChange,
@@ -229,8 +429,14 @@ export default function SettingsPanel({
               <div className="w-2 h-2 rounded-full bg-blue-500"></div>
               <span className="text-slate-600">其他进程 → E-Core / CCD1 (低优先级)</span>
             </div>
-            <div className="text-xs text-slate-400 mt-2">
-              已识别游戏: {(settings.gameList || []).length} 个
+            <div className="pt-2 border-t border-slate-100">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs text-slate-500">游戏列表</span>
+              </div>
+              <GameListEditor
+                games={settings.gameList || []}
+                onUpdate={(list) => onSettingChange('gameList', list)}
+              />
             </div>
           </div>
         )}
@@ -241,6 +447,29 @@ export default function SettingsPanel({
         <div className="flex items-center justify-between mb-4">
           <h4 className="font-medium text-slate-700">内存优化</h4>
           <MemoryCleaner />
+        </div>
+      </div>
+
+      {/* 电源计划 */}
+      <div className="glass rounded-2xl p-5 shadow-soft">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="font-medium text-slate-700">电源计划</h4>
+            <p className="text-xs text-slate-400 mt-0.5">一键切换系统电源模式</p>
+          </div>
+          <PowerPlanControl />
+        </div>
+        <PowerPlanDropZone />
+      </div>
+
+      {/* 定时器分辨率 */}
+      <div className="glass rounded-2xl p-5 shadow-soft">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="font-medium text-slate-700">高精度定时器</h4>
+            <p className="text-xs text-slate-400 mt-0.5">降低输入延迟 (1ms)</p>
+          </div>
+          <TimerResolutionControl />
         </div>
       </div>
 

@@ -783,6 +783,190 @@ ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
   });
 });
 
+// --- Power Plan IPC ---
+
+// 电源计划 GUID
+const POWER_PLANS = {
+  'high_performance': '8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c',
+  'balanced': '381b4222-f694-41f0-9685-ff5bb260df2e',
+  'power_saver': 'a1841308-3541-4fab-bc81-f71556f20b4a',
+  'ultimate': 'e9a42b02-d5df-448d-aa00-03f14749eb61' // Windows 10+
+};
+
+let originalPowerPlan = null;
+let timerResolutionEnabled = false;
+
+// 获取当前电源计划
+ipcMain.handle('get-power-plan', async () => {
+  if (process.platform !== 'win32') {
+    return { success: false, error: '仅支持 Windows' };
+  }
+
+  return new Promise((resolve) => {
+    exec('powercfg /getactivescheme', (error, stdout) => {
+      if (error) {
+        resolve({ success: false, error: error.message });
+        return;
+      }
+      // 输出格式: "电源方案 GUID: xxx-xxx (方案名称)"
+      const match = stdout.match(/([a-f0-9-]{36})/i);
+      if (match) {
+        const guid = match[1].toLowerCase();
+        let name = 'unknown';
+        for (const [key, val] of Object.entries(POWER_PLANS)) {
+          if (val === guid) name = key;
+        }
+        resolve({ success: true, guid, name });
+      } else {
+        resolve({ success: false, error: '无法解析电源计划' });
+      }
+    });
+  });
+});
+
+// 设置电源计划
+ipcMain.handle('set-power-plan', async (event, planName) => {
+  if (process.platform !== 'win32') {
+    return { success: false, error: '仅支持 Windows' };
+  }
+
+  const guid = POWER_PLANS[planName];
+  if (!guid) {
+    return { success: false, error: `未知的电源计划: ${planName}` };
+  }
+
+  return new Promise((resolve) => {
+    exec(`powercfg /setactive ${guid}`, (error) => {
+      if (error) {
+        resolve({ success: false, error: error.message });
+      } else {
+        console.log(`Power plan switched to: ${planName}`);
+        resolve({ success: true, plan: planName });
+      }
+    });
+  });
+});
+
+// 导入电源计划 (.pow 文件)
+ipcMain.handle('import-power-plan', async (event, filePath) => {
+  if (process.platform !== 'win32') {
+    return { success: false, error: '仅支持 Windows' };
+  }
+
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { success: false, error: '文件不存在' };
+  }
+
+  return new Promise((resolve) => {
+    // powercfg /import <path> 导入电源计划
+    exec(`powercfg /import "${filePath}"`, (error, stdout) => {
+      if (error) {
+        resolve({ success: false, error: error.message });
+      } else {
+        // 输出包含新 GUID
+        const match = stdout.match(/([a-f0-9-]{36})/i);
+        console.log(`Power plan imported: ${filePath}`);
+        resolve({ success: true, guid: match ? match[1] : null });
+      }
+    });
+  });
+});
+
+// 打开 Windows 电源设置
+ipcMain.handle('open-power-settings', async () => {
+  if (process.platform !== 'win32') {
+    return { success: false, error: '仅支持 Windows' };
+  }
+
+  return new Promise((resolve) => {
+    exec('control powercfg.cpl', (error) => {
+      if (error) {
+        // 备用方案：使用 ms-settings
+        exec('start ms-settings:powersleep', () => {
+          resolve({ success: true });
+        });
+      } else {
+        resolve({ success: true });
+      }
+    });
+  });
+});
+
+// 列出所有电源计划
+ipcMain.handle('list-power-plans', async () => {
+  if (process.platform !== 'win32') {
+    return { success: false, error: '仅支持 Windows' };
+  }
+
+  return new Promise((resolve) => {
+    exec('powercfg /list', (error, stdout) => {
+      if (error) {
+        resolve({ success: false, error: error.message });
+        return;
+      }
+
+      const plans = [];
+      const lines = stdout.split('\n');
+      for (const line of lines) {
+        const match = line.match(/([a-f0-9-]{36})\s+\((.+?)\)/i);
+        if (match) {
+          const isActive = line.includes('*');
+          plans.push({ guid: match[1], name: match[2], active: isActive });
+        }
+      }
+      resolve({ success: true, plans });
+    });
+  });
+});
+
+// --- Timer Resolution IPC ---
+
+let currentTimerResolution = 0; // 0 = disabled
+
+// 设置定时器分辨率 (Windows) - 支持自定义精度
+ipcMain.handle('set-timer-resolution', async (event, periodMs) => {
+  if (process.platform !== 'win32') {
+    return { success: false, error: '仅支持 Windows' };
+  }
+
+  // periodMs: 0 = disable, 1 = 1ms, 5 = 0.5ms (实际传入 1 或更小)
+  // Windows 最小支持 0.5ms (500us)
+  const period = periodMs === 0 ? 0 : Math.max(1, Math.round(periodMs));
+
+  // 先结束之前的设置
+  let script = '';
+  if (currentTimerResolution > 0) {
+    script += `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinMM { [DllImport("winmm.dll")] public static extern uint timeEndPeriod(uint period); }'; [WinMM]::timeEndPeriod(${currentTimerResolution}); `;
+  }
+
+  if (period > 0) {
+    script += `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinMM2 { [DllImport("winmm.dll")] public static extern uint timeBeginPeriod(uint period); }'; [WinMM2]::timeBeginPeriod(${period})`;
+  }
+
+  if (!script) {
+    currentTimerResolution = 0;
+    return { success: true, resolution: 0 };
+  }
+
+  return new Promise((resolve) => {
+    exec(`powershell -NoProfile -Command "${script}"`, (error) => {
+      if (error) {
+        console.error('Timer resolution error:', error.message);
+        resolve({ success: false, error: error.message });
+      } else {
+        currentTimerResolution = period;
+        console.log(`Timer resolution: ${period > 0 ? `${period}ms` : 'disabled'}`);
+        resolve({ success: true, resolution: period });
+      }
+    });
+  });
+});
+
+// 获取定时器分辨率状态
+ipcMain.handle('get-timer-resolution', async () => {
+  return { enabled: currentTimerResolution > 0, resolution: currentTimerResolution };
+});
+
 // --- Settings IPC ---
 
 ipcMain.handle('get-settings', () => appConfig);
