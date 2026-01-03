@@ -540,8 +540,8 @@ export default function SettingsPanel({
   const availableCores = selectedCores.length > 0 ? selectedCores.sort((a, b) => a - b) : [];
 
   const modes = [
-    { id: 'dynamic', label: '自动分配', icon: Zap, desc: '正常优先级' },
-    { id: 'static', label: '固定绑核', icon: Lock, desc: '绑定到优先核心，单核高优先级' },
+    { id: 'dynamic', label: '默认使用', icon: Zap, desc: '系统自动接管，平衡性能与功耗' },
+    { id: 'static', label: '固定绑核', icon: Lock, desc: '强制锁定单核，消除切换延迟' },
     { id: 'd2', label: '笔记本狂暴', icon: Scale, desc: '深度优化温控与性能，消除积热掉帧' },
     { id: 'd3', label: '极致狂暴', icon: Zap, desc: '卓越性能电源 + 实时优先级，隔离系统中断' },
   ];
