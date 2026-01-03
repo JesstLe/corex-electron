@@ -56,7 +56,15 @@ const DEFAULT_CONFIG = {
     'runtimebroker.exe', 'searchhost.exe', 'startmenuexperiencehost.exe',
     'textinputhost.exe', 'ctfmon.exe', 'conhost.exe', 'dllhost.exe',
     'audiodg.exe', 'spoolsv.exe', 'wudfhost.exe'
-  ]
+  ],
+
+  // 智能内存优化 (SmartTrim)
+  smartTrim: {
+    enabled: false,
+    threshold: 80, // 触发内存清理的百分比阈值
+    interval: 30,  // 检查间隔 (秒)
+    mode: 'standby-only' // 'standby-only' (安全, 清理缓存) | 'working-set' (激进, 压缩后台)
+  }
 };
 
 let appConfig = { ...DEFAULT_CONFIG };
@@ -196,6 +204,64 @@ async function scanAndApplyProfiles() {
         handledPids.delete(pid);
       }
     }
+  }
+
+  // 执行智能内存优化 (SmartTrim)
+  checkAndRunSmartTrim();
+}
+
+let lastSmartTrimTime = 0;
+
+async function checkAndRunSmartTrim() {
+  const settings = appConfig.smartTrim || {};
+  if (!settings.enabled) return;
+
+  const now = Date.now();
+  const intervalMs = (settings.interval || 30) * 1000;
+
+  // 检查时间间隔
+  if (now - lastSmartTrimTime < intervalMs) return;
+
+  try {
+    const mem = os.totalmem() - os.freemem();
+    const total = os.totalmem();
+    const usedPercent = (mem / total) * 100;
+    const threshold = settings.threshold || 80;
+
+    if (usedPercent >= threshold) {
+      console.log(`[SmartTrim] Memory usage ${usedPercent.toFixed(1)}% > ${threshold}%. Triggering optimization...`);
+
+      // 执行清理 - Standby List (安全模式)
+      if (process.platform === 'win32') {
+        // 使用之前实现的 clear-memory 逻辑
+        // 这里直接调用 exec，避免 IPC 往返
+        const psCommand = `
+          $code = @"
+          using System;
+          using System.Runtime.InteropServices;
+          public class MemoryCleaner {
+            [DllImport("psapi.dll")]
+            public static extern int EmptyWorkingSet(IntPtr hwProc);
+          }
+"@
+          Add-Type -TypeDefinition $code
+          # -1 is a special handle for the System Working Set (Standby List)
+          [MemoryCleaner]::EmptyWorkingSet(-1)
+        `;
+
+        exec(`powershell -NoProfile -Command "${psCommand}"`, (error) => {
+          if (error) {
+            console.warn('[SmartTrim] Failed to clear standby list:', error.message);
+          } else {
+            console.log('[SmartTrim] Standby List cleared successfully.');
+          }
+        });
+      }
+
+      lastSmartTrimTime = now;
+    }
+  } catch (err) {
+    console.error('[SmartTrim] Check failed:', err);
   }
 }
 
@@ -825,14 +891,18 @@ ipcMain.handle('get-power-plan', async () => {
 });
 
 // 设置电源计划
-ipcMain.handle('set-power-plan', async (event, planName) => {
+ipcMain.handle('set-power-plan', async (event, planNameOrGuid) => {
   if (process.platform !== 'win32') {
     return { success: false, error: '仅支持 Windows' };
   }
 
-  const guid = POWER_PLANS[planName];
+  // 检查是否为 GUID (简单的正则)
+  const isGuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(planNameOrGuid);
+
+  let guid = isGuid ? planNameOrGuid : POWER_PLANS[planNameOrGuid];
+
   if (!guid) {
-    return { success: false, error: `未知的电源计划: ${planName}` };
+    return { success: false, error: `未知的电源计划: ${planNameOrGuid}` };
   }
 
   return new Promise((resolve) => {
@@ -840,8 +910,8 @@ ipcMain.handle('set-power-plan', async (event, planName) => {
       if (error) {
         resolve({ success: false, error: error.message });
       } else {
-        console.log(`Power plan switched to: ${planName}`);
-        resolve({ success: true, plan: planName });
+        console.log(`Power plan switched to: ${planNameOrGuid} (${guid})`);
+        resolve({ success: true, plan: planNameOrGuid });
       }
     });
   });
@@ -1025,7 +1095,7 @@ ipcMain.handle('set-setting', (event, key, value) => {
   const allowedKeys = [
     'width', 'height', 'x', 'y',
     'launchOnStartup', 'closeToTray', 'cpuAffinityMode',
-    'defaultRules', 'gameList', 'excludeList'
+    'defaultRules', 'gameList', 'excludeList', 'smartTrim'
   ];
 
   if (allowedKeys.includes(key)) {

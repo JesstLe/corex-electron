@@ -84,59 +84,77 @@ function MemoryCleaner() {
   );
 }
 
-// 电源计划控制组件
+// 电源计划控制组件 - 动态获取 + 事件刷新
 function PowerPlanControl() {
-  const [currentPlan, setCurrentPlan] = useState('unknown');
+  const [currentPlanGuid, setCurrentPlanGuid] = useState('');
+  const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(false);
 
+  const fetchPlans = async () => {
+    if (window.electron?.listPowerPlans && window.electron?.getPowerPlan) {
+      const listRes = await window.electron.listPowerPlans();
+      const currentRes = await window.electron.getPowerPlan();
+
+      if (listRes.success) setPlans(listRes.plans);
+      if (currentRes.success) setCurrentPlanGuid(currentRes.guid);
+    }
+  };
+
   useEffect(() => {
-    if (window.electron?.getPowerPlan) {
-      window.electron.getPowerPlan().then(r => r.success && setCurrentPlan(r.name));
+    fetchPlans();
+    // 监听更新事件 (由 DropZone 触发)
+    window.addEventListener('power-plan-update', fetchPlans);
+    const interval = setInterval(fetchPlans, 10000); // 兜底轮询
+    return () => {
+      window.removeEventListener('power-plan-update', fetchPlans);
+      clearInterval(interval);
     }
   }, []);
 
-  const switchPlan = async (plan) => {
+  const switchPlan = async (guid) => {
     setLoading(true);
     if (window.electron?.setPowerPlan) {
-      await window.electron.setPowerPlan(plan);
-      const r = await window.electron.getPowerPlan();
-      if (r.success) setCurrentPlan(r.name);
+      // 通过 GUID 找到名称 (用于兼容 setPowerPlan 接口)
+      const plan = plans.find(p => p.guid === guid);
+      // 注意：现有的 set-power-plan IPC 可能只支持预置名称，需要更新或直接传 GUID
+      // 这里假设 IPC 已经被修改为支持 GUID 或者名称
+      // 为了安全，我们传递名称如果在预置列表中，或者扩展 IPC
+
+      // 实际上之前的 set-power-plan 只支持固定名称。
+      // 我们需要修改后端 IPC 吗？查看之前代码，set-power-plan 需要 planName 查表。
+      // 这意味着如果你导入了新计划，旧 IPC 无法切换。
+      // 为了支持新计划，我们需要一个新的 IPC 'set-power-plan-guid' 或者修改现有的。
+      // 这里为了最小修改，我们传递 key 如果是预置的，否则... 问题来了。
+
+      // 让我们假设我们将在下一步修改后端 set-power-plan 接受 GUID。
+      // 先传递 GUID 试试，并在后端做兼容。
+      await window.electron.setPowerPlan(guid);
+      await fetchPlans();
     }
     setLoading(false);
   };
-
-  const plans = [
-    { id: 'balanced', label: '平衡', color: 'bg-blue-500' },
-    { id: 'high_performance', label: '高性能', color: 'bg-orange-500' },
-    { id: 'ultimate', label: '卓越', color: 'bg-red-500' }
-  ];
 
   const openSettings = () => {
     window.electron?.openPowerSettings?.();
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-2 flex-wrap justify-end max-w-[300px]">
       {plans.map(p => (
         <button
-          key={p.id}
-          onClick={() => switchPlan(p.id)}
+          key={p.guid}
+          onClick={() => switchPlan(p.guid)}
           disabled={loading}
-          className={`px-2.5 py-1 text-xs rounded-lg transition-all ${currentPlan === p.id
-            ? `${p.color} text-white`
+          title={p.guid}
+          className={`px-2.5 py-1 text-xs rounded-lg transition-all truncate max-w-[100px] ${currentPlanGuid === p.guid || p.active
+            ? 'bg-violet-500 text-white'
             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
         >
-          {p.label}
+          {p.name.replace(' (Active)', '')}
         </button>
       ))}
-      <button
-        onClick={openSettings}
-        className="px-2 py-1 text-xs bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200"
-        title="打开电源设置"
-      >
-        ⚙
-      </button>
+      <button onClick={openSettings} className="px-2 py-1 text-xs bg-slate-100 text-slate-500 rounded-lg hover:bg-slate-200">⚙</button>
     </div>
   );
 }
@@ -163,6 +181,8 @@ function PowerPlanDropZone() {
       const result = await window.electron.importPowerPlan(powFile.path);
       if (result.success) {
         setMessage({ type: 'success', text: '导入成功！' });
+        // 触发列表刷新
+        window.dispatchEvent(new Event('power-plan-update'));
       } else {
         setMessage({ type: 'error', text: result.error || '导入失败' });
       }
@@ -272,6 +292,98 @@ function TimerResolutionControl() {
         <span className="text-xs text-green-600 ml-1 font-mono">
           当前: {resolution.toFixed(4).replace(/\.?0+$/, '')}ms
         </span>
+      )}
+    </div>
+  );
+}
+
+// 智能内存优化控制组件
+function SmartTrimControl({ settings, onUpdate }) {
+  const [threshold, setThreshold] = useState(settings?.threshold || 80);
+
+  const toggle = () => {
+    onUpdate({
+      ...settings,
+      enabled: !settings?.enabled
+    });
+  };
+
+  const handleSliderChange = (e) => {
+    setThreshold(parseInt(e.target.value));
+  };
+
+  const handleSliderCommit = () => {
+    onUpdate({
+      ...settings,
+      threshold: threshold
+    });
+  };
+
+  const handleInputChange = (e) => {
+    let val = parseInt(e.target.value);
+    if (!isNaN(val)) {
+      if (val < 1) val = 1;
+      if (val > 100) val = 100;
+      setThreshold(val);
+    }
+  };
+
+  const handleInputBlur = () => {
+    let val = threshold;
+    if (val < 50) val = 50; // 最小值限制
+    if (val > 95) val = 95; // 最大值限制
+    setThreshold(val);
+    onUpdate({
+      ...settings,
+      threshold: val
+    });
+  };
+
+  return (
+    <div className="mt-4 pt-3 border-t border-slate-100">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <span className="text-sm text-slate-600 font-medium">SmartTrim 自动优化</span>
+          <p className="text-xs text-slate-400">内存超过阈值时自动清理备用列表（不影响游戏）</p>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={!!settings?.enabled}
+            onChange={toggle}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-green-500"></div>
+        </label>
+      </div>
+
+      {settings?.enabled && (
+        <div className="flex items-center gap-3 pl-1">
+          <span className="text-xs text-slate-500 whitespace-nowrap">触发阈值</span>
+          <div className="flex-1 flex items-center gap-2">
+            <input
+              type="range"
+              min="50"
+              max="95"
+              step="1"
+              value={threshold}
+              onChange={handleSliderChange}
+              onMouseUp={handleSliderCommit}
+              className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-green-500"
+            />
+            <div className="flex items-center relative">
+              <input
+                type="number"
+                value={threshold}
+                onChange={handleInputChange}
+                onBlur={handleInputBlur} // 失去焦点时保存
+                onKeyDown={(e) => e.key === 'Enter' && e.target.blur()}
+                className="w-12 px-1 py-0.5 text-xs text-right bg-slate-50 border border-slate-200 rounded focus:outline-none focus:border-green-500 font-mono"
+              />
+              <span className="text-xs text-slate-400 ml-1">%</span>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -483,10 +595,14 @@ export default function SettingsPanel({
 
       {/* 内存清理 */}
       <div className="glass rounded-2xl p-5 shadow-soft">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center justify-between mb-2">
           <h4 className="font-medium text-slate-700">内存优化</h4>
           <MemoryCleaner />
         </div>
+        <SmartTrimControl
+          settings={settings.smartTrim}
+          onUpdate={(val) => onSettingChange('smartTrim', val)}
+        />
       </div>
 
       {/* 电源计划 */}
