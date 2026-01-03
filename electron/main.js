@@ -563,7 +563,7 @@ function setAffinity(pid, coreMask, mode = 'dynamic', primaryCore = null) {
         // 优先使用用户设置的优先核心，如果没有则使用选中核心中的第一个
         priorityClass = 'High';
         let targetCoreBit = 0n;
-        
+
         if (primaryCore !== null && primaryCore !== undefined && primaryCore !== 'auto') {
           // 如果指定了优先核心，使用优先核心
           const primaryIdx = parseInt(primaryCore, 10);
@@ -574,7 +574,7 @@ function setAffinity(pid, coreMask, mode = 'dynamic', primaryCore = null) {
             }
           }
         }
-        
+
         // 如果没有优先核心或优先核心不在掩码中，使用选中核心中的第一个（最低位）
         if (targetCoreBit === 0n) {
           for (let i = 0n; i < 64n; i++) {
@@ -584,15 +584,41 @@ function setAffinity(pid, coreMask, mode = 'dynamic', primaryCore = null) {
             }
           }
         }
-        
+
         if (targetCoreBit !== 0n) finalMask = targetCoreBit;
       }
       else if (mode === 'd2') {
-        // 均衡调度：保持完整核心掩码，使用较低优先级
-        // 进程可以在所有选中核心上运行，但在系统繁忙时会让步
-        priorityClass = 'BelowNormal';
-        // 保持用户选择的完整掩码不变
-        finalMask = mask;
+        // 笔记本狂暴模式 (Laptop Performance Optimized)
+        // 策略：高优先级 + 禁用超线程 (SMT Off/Hyper-Threading Off)
+        // 原理：笔记本散热受限，关闭HT可以显著降低核心温度，允许物理P核长时间维持更高睿频
+        priorityClass = 'High';
+
+        // SMT Off 算法：只保留偶数位核心 (0, 2, 4...)
+        // 仅当核心数足够多 (>4) 时启用，避免双核笔记本变单核
+        // 假设 mask 包含所有逻辑核心
+        let smtOffMask = 0n;
+        let coreCount = 0;
+
+        // 统计总位数
+        for (let i = 0n; i < 64n; i++) {
+          if ((mask & (1n << i)) !== 0n) coreCount++;
+        }
+
+        if (coreCount > 4) {
+          for (let i = 0n; i < 64n; i += 2n) {
+            // 检查当前偶数位是否在原掩码中
+            // 并且 (i+1) 是对应的HT线程？(通常 Intel/AMD 逻辑是 0/1, 2/3)
+            // 简单保留偶数位即可
+            if ((mask & (1n << i)) !== 0n) {
+              smtOffMask |= (1n << i);
+            }
+          }
+          // 如果计算出的掩码非空，则应用；否则保持原样 (防呆)
+          if (smtOffMask > 0n) {
+            finalMask = smtOffMask;
+            console.log(`[LaptopMode] Optimized affinity: SMT Off applied to PID ${pid}`);
+          }
+        }
       }
       else if (mode === 'd3') {
         // 节能优先：优先使用高编号核心（通常是 E-Core），最低优先级
@@ -626,7 +652,7 @@ function setAffinity(pid, coreMask, mode = 'dynamic', primaryCore = null) {
         if (!isNaN(primaryIdx) && primaryIdx >= 0 && primaryIdx < 64) {
           // 优先核心掩码
           const primaryMask = (1n << BigInt(primaryIdx)).toString();
-          
+
           // 使用 PowerShell 设置进程亲和性和优先级，然后设置主线程亲和性
           const cmd = `
 $code = @"

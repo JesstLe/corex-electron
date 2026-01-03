@@ -394,8 +394,8 @@ function SmartTrimControl({ settings, onUpdate }) {
             <button
               onClick={() => onUpdate({ ...settings, mode: 'standby-only' })}
               className={`px-2 py-1 text-xs rounded transition-colors ${(settings.mode || 'standby-only') === 'standby-only'
-                  ? 'bg-green-100 text-green-700 font-medium'
-                  : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                ? 'bg-green-100 text-green-700 font-medium'
+                : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
                 }`}
               title="仅清理备用内存列表，无副作用 (推荐)"
             >
@@ -404,8 +404,8 @@ function SmartTrimControl({ settings, onUpdate }) {
             <button
               onClick={() => onUpdate({ ...settings, mode: 'working-set' })}
               className={`px-2 py-1 text-xs rounded transition-colors ${settings.mode === 'working-set'
-                  ? 'bg-red-100 text-red-700 font-medium'
-                  : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
+                ? 'bg-red-100 text-red-700 font-medium'
+                : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
                 }`}
               title="强制压缩后台进程内存，可能导致切换程序时轻微卡顿"
             >
@@ -542,7 +542,7 @@ export default function SettingsPanel({
   const modes = [
     { id: 'dynamic', label: '自动分配', icon: Zap, desc: '正常优先级' },
     { id: 'static', label: '固定绑核', icon: Lock, desc: '绑定到优先核心，单核高优先级' },
-    { id: 'd2', label: '均衡调度', icon: Scale, desc: '全核较低优先级' },
+    { id: 'd2', label: '笔记本狂暴', icon: Scale, desc: '禁止超线程 + 高优先级 (降低积热)' },
     { id: 'd3', label: '节能优先', icon: Leaf, desc: 'E-Core最低优先级' },
   ];
 
