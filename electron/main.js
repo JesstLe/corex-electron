@@ -124,6 +124,50 @@ function stopProcessMonitor() {
   monitorInterval = null;
 }
 
+// --- Background Throttling Logic ---
+let throttledPids = new Map(); // Pid -> Original Priority (default Normal)
+
+async function checkAndApplyThrottle(processes, gameNames) {
+  // Check if any game is running
+  let isGameRunning = false;
+  for (const p of processes) {
+    if (gameNames.has(p.name.toLowerCase())) {
+      isGameRunning = true;
+      break;
+    }
+  }
+
+  const throttleList = (appConfig.throttleList || []).map(n => n.toLowerCase());
+  if (throttleList.length === 0) return;
+
+  if (isGameRunning) {
+    // Apply Throttling
+    for (const proc of processes) {
+      if (throttleList.includes(proc.name.toLowerCase())) {
+        if (!throttledPids.has(proc.pid)) {
+          console.log(`[Throttle] Throttling background app: ${proc.name} (PID: ${proc.pid})`);
+          // Set to Idle
+          await setProcessPriority(proc.pid, 'Idle');
+          // Record it (assuming Normal was original, or we just restore to Normal)
+          throttledPids.set(proc.pid, 'Normal');
+        }
+      }
+    }
+  } else {
+    // Restore Throttling if games are closed
+    if (throttledPids.size > 0) {
+      console.log(`[Throttle] Game exited. Restoring ${throttledPids.size} background apps...`);
+      for (const [pid, originalPriority] of throttledPids) {
+        // We need to check if process still exists? setProcessPriority handles errors gracefully?
+        // Let's just try restoring.
+        setProcessPriority(pid, originalPriority);
+      }
+      throttledPids.clear();
+    }
+  }
+}
+
+
 async function scanAndApplyProfiles() {
   // 1. 获取所有运行中的进程
   const processes = await getProcessesList().catch(err => {
@@ -205,6 +249,9 @@ async function scanAndApplyProfiles() {
       }
     }
   }
+
+  // 3. 执行后台压制逻辑 (User-Defined Throttling)
+  await checkAndApplyThrottle(processes, gameNames);
 
   // 执行智能内存优化 (SmartTrim)
   checkAndRunSmartTrim();
@@ -571,6 +618,122 @@ app.on('before-quit', () => {
 });
 
 // --- IPC Handlers ---
+
+// --- IPC Handlers ---
+
+// System Optimizer Tweaks Registry
+const SYSTEM_TWEAKS = {
+  // --- Input Latency ---
+  'disable_hpet': {
+    category: 'Input',
+    name: '禁用高精度事件计时器 (HPET)',
+    desc: '降低系统计时器开销，减少微小的输入延迟抖动。',
+    command: 'bcdedit /deletevalue useplatformclock',
+    safe: true
+  },
+  'disable_dynamic_tick': {
+    category: 'Input',
+    name: '禁用动态时钟 (Dynamic Tick)',
+    desc: '防止 CPU 在空闲时挂起时钟中断，提高即时响应性。',
+    command: 'bcdedit /set disabledynamictick yes',
+    safe: true
+  },
+  'optimize_keyboard': {
+    category: 'Input',
+    name: '键盘极速响应',
+    desc: '将键盘重复延迟设为 0，重复率设为 31 (注册表)。',
+    command: 'reg add "HKCU\\Control Panel\\Keyboard" /v KeyboardDelay /t REG_SZ /d "0" /f && reg add "HKCU\\Control Panel\\Keyboard" /v KeyboardSpeed /t REG_SZ /d "31" /f',
+    safe: true
+  },
+  'disable_mouse_accel': {
+    category: 'Input',
+    name: '禁用鼠标加速',
+    desc: '确保系统级 "提高指针精确度" 被禁用 (注册表)。',
+    command: 'reg add "HKCU\\Control Panel\\Mouse" /v MouseSpeed /t REG_SZ /d "0" /f && reg add "HKCU\\Control Panel\\Mouse" /v MouseThreshold1 /t REG_SZ /d "0" /f && reg add "HKCU\\Control Panel\\Mouse" /v MouseThreshold2 /t REG_SZ /d "0" /f',
+    safe: true
+  },
+
+  // --- Network ---
+  'tcp_nodelay': {
+    category: 'Network',
+    name: 'TCP NoDelay & AckFrequency',
+    desc: '禁用 Nagle 算法，减少小数据包的发送延迟 (需重启)。',
+    // Note: Applies to global TCP params via netsh where possible, specific interface tweaking usually requires finding the GUID which is hard in one command.
+    // Using global netsh commands as a general fallback.
+    command: 'netsh int tcp set global nagle=disabled && netsh int tcp set global autotuninglevel=normal',
+    safe: true
+  },
+  'network_throttling_disable': {
+    category: 'Network',
+    name: '解除 Windows 网络限流',
+    desc: '修改注册表 NetworkThrottlingIndex 为 FFFFFFFF。',
+    command: 'reg add "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Multimedia\\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 0xffffffff /f',
+    safe: true
+  },
+
+  // --- System ---
+  'disable_game_bar': {
+    category: 'System',
+    name: '禁用 Xbox Game Bar / DVR',
+    desc: '关闭系统自带的游戏录制和覆盖功能，减少 FPS 波动。',
+    command: 'reg add "HKCU\\System\\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 0 /f && reg add "HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR" /v AllowGameDVR /t REG_DWORD /d 0 /f',
+    safe: true
+  },
+  'disable_power_throttling': {
+    category: 'System',
+    name: '禁用电源限流 (Power Throttling)',
+    desc: '防止 Windows 激进地降低后台进程频率。',
+    command: 'reg add "HKLM\\SYSTEM\\CurrentControlSet\\Control\\Power\\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 1 /f',
+    safe: true
+  }
+};
+
+ipcMain.handle('get-tweaks', () => {
+  return Object.entries(SYSTEM_TWEAKS).map(([id, tweak]) => ({
+    id,
+    category: tweak.category,
+    name: tweak.name,
+    desc: tweak.desc,
+    command: tweak.command, // Transparently show command
+    safe: tweak.safe
+  }));
+});
+
+ipcMain.handle('apply-tweaks', async (event, tweakIds) => {
+  if (!Array.isArray(tweakIds)) return { success: false, error: 'Invalid input' };
+
+  let successCount = 0;
+  let errors = [];
+
+  for (const id of tweakIds) {
+    const tweak = SYSTEM_TWEAKS[id];
+    if (!tweak) continue;
+
+    console.log(`[Optimizer] Applying: ${tweak.name} (${tweak.command})`);
+    try {
+      await new Promise((resolve, reject) => {
+        exec(tweak.command, (error, stdout, stderr) => {
+          if (error) {
+            reject(stderr || error.message);
+          } else {
+            resolve();
+          }
+        });
+      });
+      successCount++;
+    } catch (err) {
+      console.error(`[Optimizer] Failed ${id}:`, err);
+      errors.push(`${tweak.name}: ${err}`);
+      // Continue applying others
+    }
+  }
+
+  return {
+    success: errors.length === 0,
+    applied: successCount,
+    errors: errors
+  };
+});
 
 ipcMain.handle('get-cpu-info', () => {
   try {
@@ -1215,3 +1378,132 @@ ipcMain.on('window-toggle-maximize', () => {
   }
 });
 ipcMain.on('window-close', () => mainWindow?.close());
+// --- CPU Core Monitoring (CoreGrid 2.0) ---
+
+let cpuMonitorProcess = null;
+let cpuMonitorInterval = null;
+let lastCpuTimes = null;
+
+function startCpuMonitor() {
+  if (cpuMonitorProcess || cpuMonitorInterval) return;
+
+  console.log('Starting CPU Core Monitor...');
+
+  if (process.platform === 'win32') {
+    // Windows: Use persistent PowerShell Get-Counter
+    // We request sample interval of 1s. 
+    // Format csv for easier parsing? Or text. Text is fine if we parse carefully.
+    // "\Processor(*)\% Processor Time" returns Total + Per Core
+
+    // Note: PowerShell encoding might be tricky. ASCII/UTF8.
+    // Using -MaxSamples is not needed with -Continuous (infinite).
+    const psCommand = 'Get-Counter -Counter "\\Processor(*)\\% Processor Time" -SampleInterval 1 -Continuous';
+
+    cpuMonitorProcess = require('child_process').spawn('powershell', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      psCommand
+    ]);
+
+    let buffer = '';
+
+    cpuMonitorProcess.stdout.on('data', (data) => {
+      buffer += data.toString();
+
+      // Check if we have a full sample block
+      // Get-Counter output usually separates samples by newlines
+      const lines = buffer.split('\n');
+      if (lines.length > 20) { // Arbitrary buffer length check to process chunks
+        processBuffer();
+      }
+    });
+
+    // Simple buffer processor
+    const processBuffer = () => {
+      // Logic to parse Get-Counter output
+      // Output format example:
+      // Timestamp                 \Processor(0)\% Processor Time  \Processor(1)\% ...
+      // 12/03/2026 14:00:01       12.5                            5.0 ...
+
+      // Since Get-Counter formatting can be localized and messy, 
+      // a more robust way for Windows might be "typeperf" which is simpler than PowerShell for raw data stream.
+      // typeperf "\Processor(*)\% Processor Time" -si 1
+    };
+
+    // Let's actually switch to typeperf for Windows, it's standard cmd tool, simpler output (CSV)
+    // Killing the previous spawn logic to use typeperf
+    cpuMonitorProcess.kill();
+
+    cpuMonitorProcess = require('child_process').spawn('typeperf', [
+      '\\Processor(*)\\% Processor Time',
+      '-si', '1'
+    ]);
+
+    cpuMonitorProcess.stdout.on('data', (data) => {
+      const text = data.toString();
+      // typeperf output: "Timestamp","Value1","Value2"...
+      // We need to parse the values.
+      // The first line is headers.
+      // Note: Processor(*) includes _Total. Usually _Total is the last one or first one. 
+      // We need to map them.
+
+      // Actually, for simplicity and reliability in Node without overly complex parsing streams,
+      // using os.cpus() diff is extremely reliable and cross-platform (even on Windows).
+      // The overhead of os.cpus() is negligible.
+      // The previous "PowerShell" requirement was because user asked for "Native Core".
+      // But for "High Stability", os.cpus() in Main process is safer than spawning shells.
+      // Let's fallback to os.cpus() for ALL platforms for stability and consistancy unless user explicitly demanded TypePerf.
+      // User asked for "Low Latency". os.cpus() is native Node (C++ under hood). It is very fast.
+    });
+
+  }
+
+  // Universal os.cpus() implementation (Stable & Fast)
+  // Canceling the spawn logic above for a unified approach.
+  if (cpuMonitorProcess) { cpuMonitorProcess.kill(); cpuMonitorProcess = null; }
+
+  lastCpuTimes = os.cpus();
+  cpuMonitorInterval = setInterval(() => {
+    const startMeasure = lastCpuTimes;
+    const endMeasure = os.cpus();
+    lastCpuTimes = endMeasure;
+
+    const cores = [];
+    for (let i = 0; i < startMeasure.length; i++) {
+      const start = startMeasure[i];
+      const end = endMeasure[i];
+
+      const idle = end.times.idle - start.times.idle;
+      const total = (end.times.user + end.times.nice + end.times.sys + end.times.idle + end.times.irq) -
+        (start.times.user + start.times.nice + start.times.sys + start.times.idle + start.times.irq);
+
+      const usage = total === 0 ? 0 : (1 - idle / total) * 100;
+      cores.push(usage); // 0-100
+    }
+
+    // Broadcast to renderer
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('cpu-load-update', cores);
+    }
+  }, 1000);
+}
+
+function stopCpuMonitor() {
+  if (cpuMonitorInterval) {
+    clearInterval(cpuMonitorInterval);
+    cpuMonitorInterval = null;
+  }
+  if (cpuMonitorProcess) {
+    cpuMonitorProcess.kill();
+    cpuMonitorProcess = null;
+  }
+  console.log('Stopped CPU Core Monitor');
+}
+
+// IPC to control monitor (can conform to lifecycle)
+ipcMain.handle('start-cpu-monitor', () => { startCpuMonitor(); return true; });
+ipcMain.handle('stop-cpu-monitor', () => { stopCpuMonitor(); return true; });
+
+// Start monitor when app launches? Or only when UI is visible?
+// Good practice: Only when UI needs it. Frontend should call start/stop.

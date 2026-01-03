@@ -36,6 +36,85 @@ export default function CoreGrid({
     partition0Count = cpuArch.pCores * 2; // P核支持超线程
   }
 
+  // CPU 监控逻辑
+  const [cpuLoads, setCpuLoads] = React.useState([]);
+
+  React.useEffect(() => {
+    // 开启监控
+    if (window.electron?.startCpuMonitor) {
+      window.electron.startCpuMonitor();
+    }
+
+    // 监听更新
+    const handleUpdate = (data) => {
+      if (Array.isArray(data)) {
+        setCpuLoads(data);
+      }
+    };
+
+    if (window.electron?.onCpuLoadUpdate) {
+      window.electron.onCpuLoadUpdate(handleUpdate);
+    }
+
+    return () => {
+      // 停止监控并清理监听
+      if (window.electron?.offCpuLoadUpdate) window.electron.offCpuLoadUpdate();
+      if (window.electron?.stopCpuMonitor) window.electron.stopCpuMonitor();
+    };
+  }, []);
+
+  // 渲染核心的辅助函数
+  const renderCore = (coreIndex) => {
+    const isSelected = selectedCores.includes(coreIndex);
+    const load = cpuLoads[coreIndex] || 0;
+
+    // 热力图颜色计算
+    // Low (<30): Green-ish intent (Slate with green hint)
+    // Med (30-70): Yellow-ish
+    // High (>70): Red
+    let heatColorClass = 'bg-slate-50';
+    let heatOverlayColor = 'transparent';
+
+    if (load > 80) heatOverlayColor = 'rgba(239, 68, 68, 0.2)'; // Red
+    else if (load > 40) heatOverlayColor = 'rgba(234, 179, 8, 0.15)'; // Yellow
+    else if (load > 10) heatOverlayColor = 'rgba(34, 197, 94, 0.1)'; // Green
+
+    return (
+      <button
+        key={coreIndex}
+        onClick={() => onToggleCore(coreIndex)}
+        title={`Core ${coreIndex} - ${(load).toFixed(0)}% Util`}
+        className={`relative w-10 h-10 rounded-lg text-xs font-medium transition-all flex items-center justify-center border overflow-hidden ${isSelected
+            ? 'bg-violet-500 text-white border-violet-600 shadow-md shadow-violet-200'
+            : 'text-slate-600 border-slate-200 hover:border-slate-300'
+          }`}
+        style={!isSelected ? { backgroundColor: '#f8fafc' } : {}}
+      >
+        {/* Heatmap Overlay (Only for unselected to keep selected clean, or subtle on selected) */}
+        {!isSelected && (
+          <div
+            className="absolute inset-0 transition-all duration-500"
+            style={{
+              backgroundColor: heatOverlayColor,
+              height: `${Math.max(10, load)}%`, // Vertical fill effect
+              bottom: 0,
+              top: 'auto'
+            }}
+          />
+        )}
+
+        <span className="relative z-10">{coreIndex}</span>
+
+        {/* Load Indicator (Small dot or bar) */}
+        {cpuLoads.length > 0 && (
+          <div className={`absolute bottom-0.5 right-0.5 text-[8px] leading-none ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
+            {load > 0 ? Math.round(load) : ''}
+          </div>
+        )}
+      </button>
+    );
+  };
+
   return (
     <div className="glass rounded-2xl p-6 shadow-soft">
       <div className="flex items-center justify-between mb-5">
@@ -99,16 +178,14 @@ export default function CoreGrid({
               <div className={`w-2 h-2 rounded-full bg-${partition0Color}-500`} style={{
                 backgroundColor: partition0Color === 'emerald' ? '#10b981' : partition0Color === 'blue' ? '#3b82f6' : undefined
               }}></div>
-              <span className={`text-xs font-medium text-${partition0Color}-600`} style={{
-                color: partition0Color === 'emerald' ? '#059669' : partition0Color === 'blue' ? '#2563eb' : undefined
-              }}>{partition0Label}</span>
-              <span className="text-xs text-slate-400">· 核心 0-{partition0Count - 1}</span>
+              <span className="text-xs font-medium text-slate-500">{partition0Label}</span>
+              <span className="text-xs text-slate-400 ml-1">({partition0Count} Cores)</span>
               {cpuArch?.type === 'INTEL_HYBRID' && (
                 <span className="text-xs text-slate-400">({cpuArch.pCores}核 · 支持超线程)</span>
               )}
             </div>
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-              {cores.slice(0, partition0Count).map((coreIndex) => renderCoreButton(coreIndex, 'partition0', partition0Color))}
+            <div className="grid grid-cols-8 gap-2">
+              {cores.slice(0, partition0Count).map((_, i) => renderCore(i))}
             </div>
           </div>
 
@@ -118,22 +195,20 @@ export default function CoreGrid({
               <div className={`w-2 h-2 rounded-full bg-${partition1Color}-500`} style={{
                 backgroundColor: partition1Color === 'orange' ? '#f97316' : partition1Color === 'purple' ? '#a855f7' : undefined
               }}></div>
-              <span className={`text-xs font-medium text-${partition1Color}-600`} style={{
-                color: partition1Color === 'orange' ? '#ea580c' : partition1Color === 'purple' ? '#9333ea' : undefined
-              }}>{partition1Label}</span>
-              <span className="text-xs text-slate-400">· 核心 {partition0Count}-{cores.length - 1}</span>
+              <span className="text-xs font-medium text-slate-500">{partition1Label}</span>
+              <span className="text-xs text-slate-400 ml-1">({cores.length - partition0Count} Cores)</span>
               {cpuArch?.type === 'INTEL_HYBRID' && (
                 <span className="text-xs text-slate-400">({cpuArch.eCores}核 · 无超线程)</span>
               )}
             </div>
-            <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-              {cores.slice(partition0Count).map((coreIndex) => renderCoreButton(coreIndex, 'partition1', partition1Color))}
+            <div className="grid grid-cols-8 gap-2">
+              {cores.slice(partition0Count).map((_, i) => renderCore(partition0Count + i))}
             </div>
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
-          {cores.map((coreIndex) => renderCoreButton(coreIndex, null, null))}
+        <div className="grid grid-cols-8 gap-2">
+          {cores.map((_, i) => renderCore(i))}
         </div>
       )}
 
@@ -144,11 +219,19 @@ export default function CoreGrid({
         <div className="w-px h-3 bg-slate-200"></div>
         <div className="flex items-center gap-1.5">
           <div className="w-2 h-2 rounded bg-violet-500"></div>
-          <span>C = 物理核心</span>
+          <span>已选核心</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <div className="w-2 h-2 rounded bg-pink-400"></div>
-          <span>T = 逻辑线程</span>
+          <div className="w-2 h-2 rounded bg-red-400"></div>
+          <span>高负载</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded bg-yellow-400"></div>
+          <span>中负载</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <div className="w-2 h-2 rounded bg-green-400"></div>
+          <span>低负载</span>
         </div>
         {isDualPartition && (
           <>

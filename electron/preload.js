@@ -23,4 +23,14 @@ contextBridge.exposeInMainWorld('electron', {
   listPowerPlans: () => ipcRenderer.invoke('list-power-plans'),
   setTimerResolution: (periodMs) => ipcRenderer.invoke('set-timer-resolution', periodMs),
   getTimerResolution: () => ipcRenderer.invoke('get-timer-resolution'),
+
+  // CoreGrid 2.0
+  startCpuMonitor: () => ipcRenderer.invoke('start-cpu-monitor'),
+  stopCpuMonitor: () => ipcRenderer.invoke('stop-cpu-monitor'),
+  onCpuLoadUpdate: (callback) => ipcRenderer.on('cpu-load-update', (event, data) => callback(data)),
+  offCpuLoadUpdate: () => ipcRenderer.removeAllListeners('cpu-load-update'),
+
+  // System Optimizer
+  getTweaks: () => ipcRenderer.invoke('get-tweaks'),
+  applyTweaks: (ids) => ipcRenderer.invoke('apply-tweaks', ids),
 });

@@ -389,6 +389,47 @@ function SmartTrimControl({ settings, onUpdate }) {
   );
 }
 
+// 压制列表编辑器组件
+function ThrottleListEditor({ items = [], onUpdate }) {
+  const [newItem, setNewItem] = useState('');
+
+  const add = () => {
+    if (newItem && !items.includes(newItem)) {
+      onUpdate([...items, newItem]);
+      setNewItem('');
+    }
+  };
+
+  const remove = (item) => {
+    onUpdate(items.filter(x => x !== item));
+  };
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="flex gap-2">
+        <input
+          type="text"
+          value={newItem}
+          onChange={(e) => setNewItem(e.target.value)}
+          placeholder="chrome.exe"
+          className="flex-1 px-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/30"
+          onKeyDown={(e) => e.key === 'Enter' && add()}
+        />
+        <button onClick={add} className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600">添加</button>
+      </div>
+      <div className="max-h-32 overflow-y-auto space-y-1">
+        {items.length === 0 && <div className="text-xs text-slate-400 text-center py-2">没有添加任何压制程序</div>}
+        {items.map(item => (
+          <div key={item} className="flex items-center justify-between px-2 py-1 bg-red-50 rounded text-xs border border-red-100">
+            <span className="text-red-700">{item}</span>
+            <button onClick={() => remove(item)} className="text-red-300 hover:text-red-600">×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // 游戏列表编辑器组件
 function GameListEditor({ games = [], onUpdate }) {
   const [newGame, setNewGame] = useState('');
@@ -607,14 +648,28 @@ export default function SettingsPanel({
 
       {/* 电源计划 */}
       <div className="glass rounded-2xl p-5 shadow-soft">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-slate-700">电源计划</h4>
-            <p className="text-xs text-slate-400 mt-0.5">一键切换系统电源模式</p>
+        <div className="flex items-center justify-between mb-2">
+          <h4 className="font-medium text-slate-700">电源计划</h4>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400">拖入.pow导入</span>
+            <PowerPlanControl />
           </div>
-          <PowerPlanControl />
         </div>
         <PowerPlanDropZone />
+      </div>
+
+      {/* 后台压制 (Throttle List) */}
+      <div className="glass rounded-2xl p-5 shadow-soft">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <h4 className="font-medium text-slate-700">后台进程压制</h4>
+            <p className="text-xs text-slate-400">游戏运行时，强制将列表中的程序降级为 IDLE (最低) 优先级</p>
+          </div>
+        </div>
+        <ThrottleListEditor
+          items={settings.throttleList || []}
+          onUpdate={(list) => onSettingChange('throttleList', list)}
+        />
       </div>
 
       {/* 定时器分辨率 */}

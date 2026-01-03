@@ -1,10 +1,14 @@
+
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
 import ProcessScanner from './components/ProcessScanner';
 import CoreGrid from './components/CoreGrid';
-import SettingsPanel from './components/SettingsPanel';
 import ControlBar from './components/ControlBar';
-import { ToastContainer } from './components/Toast';
+import MemoryCleaner from './components/MemoryCleaner';
+import SettingsPanel from './components/SettingsPanel';
+import SystemOptimizer from './components/SystemOptimizer';
+import Toast, { ToastContainer, toast } from './components/Toast';
+import { Activity, Settings, Zap } from 'lucide-react';
 import { getCpuArchitecture } from './data/cpuDatabase';
 
 function App() {
@@ -155,7 +159,7 @@ function App() {
           closeToTray: '关闭时最小化'
         };
         const settingName = settingNames[key] || key;
-        showToast(`${settingName}已${value ? '启用' : '禁用'}`, 'success');
+        showToast(`${settingName}已${value ? '启用' : '禁用'} `, 'success');
       }
     }
   };
@@ -200,15 +204,15 @@ function App() {
 
         if (result.success) {
           setStatus('active');
-          const statusMsg = prioritySuccess ? ` | 优先级: ${priority}` : ' (优先级设置失败)';
-          showToast(`已应用到进程 ${selectedPid}${statusMsg}`, 'success');
+          const statusMsg = prioritySuccess ? ` | 优先级: ${priority} ` : ' (优先级设置失败)';
+          showToast(`已应用到进程 ${selectedPid}${statusMsg} `, 'success');
         } else {
           showToast(result.error || '设置失败', 'error');
         }
       } else {
-        console.log(`Affinity: PID=${selectedPid}, Mask=${mask}, Mode=${mode}, Priority=${priority}`);
+        console.log(`Affinity: PID = ${selectedPid}, Mask = ${mask}, Mode = ${mode}, Priority = ${priority} `);
         setStatus('active');
-        showToast(`已应用到进程 ${selectedPid}`, 'success');
+        showToast(`已应用到进程 ${selectedPid} `, 'success');
       }
     } catch (err) {
       showToast(err.message || '应用失败', 'error');
@@ -258,7 +262,7 @@ function App() {
         if (result.success) {
           setSettings(prev => ({ ...prev, profiles: result.profiles }));
           setStatus('active');
-          showToast(`策略已保存: ${process.name}`, 'success');
+          showToast(`策略已保存: ${process.name} `, 'success');
         } else {
           showToast(result.error || '保存策略失败', 'error');
         }
@@ -266,7 +270,7 @@ function App() {
         console.log('Mock Save Profile:', profile);
         const newProfiles = [...(settings.profiles || []), { ...profile, timestamp: Date.now() }];
         setSettings(prev => ({ ...prev, profiles: newProfiles }));
-        showToast(`策略已保存: ${process.name}`, 'success');
+        showToast(`策略已保存: ${process.name} `, 'success');
       }
     } catch (err) {
       console.error(err);
@@ -280,14 +284,14 @@ function App() {
         const result = await window.electron.removeProfile(name);
         if (result.success) {
           setSettings(prev => ({ ...prev, profiles: result.profiles }));
-          showToast(`已删除策略: ${name}`, 'success');
+          showToast(`已删除策略: ${name} `, 'success');
         } else {
           showToast('删除策略失败', 'error');
         }
       } else {
         const newProfiles = (settings.profiles || []).filter(p => p.name !== name);
         setSettings(prev => ({ ...prev, profiles: newProfiles }));
-        showToast(`已删除策略: ${name}`, 'success');
+        showToast(`已删除策略: ${name} `, 'success');
       }
     } catch (err) {
       console.error(err);
@@ -302,6 +306,8 @@ function App() {
 
   const coreCount = cpuInfo?.cores || 16;
   const cores = Array.from({ length: coreCount }, (_, i) => i);
+
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   if (loading) {
     return (
@@ -334,60 +340,113 @@ function App() {
     <div className="flex flex-col h-screen bg-gradient-to-br from-slate-50 via-white to-violet-50 overflow-hidden">
       <Header cpuModel={cpuInfo?.model} />
 
+      {/* Tab Navigation */}
+      <div className="flex justify-center mt-4 mb-2">
+        <div className="bg-white/50 backdrop-blur-md p-1 rounded-xl flex gap-1 shadow-sm border border-slate-200/50">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`px - 4 py - 2 rounded - lg text - sm font - medium transition - all flex items - center gap - 2 ${activeTab === 'dashboard'
+                ? 'bg-violet-500 text-white shadow-md shadow-violet-500/20'
+                : 'text-slate-500 hover:bg-slate-100'
+              } `}
+          >
+            <Activity size={16} />
+            <span>核心调度</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`px - 4 py - 2 rounded - lg text - sm font - medium transition - all flex items - center gap - 2 ${activeTab === 'settings'
+                ? 'bg-violet-500 text-white shadow-md shadow-violet-500/20'
+                : 'text-slate-500 hover:bg-slate-100'
+              } `}
+          >
+            <Settings size={16} />
+            <span>游戏模式</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('optimizer')}
+            className={`px - 4 py - 2 rounded - lg text - sm font - medium transition - all flex items - center gap - 2 ${activeTab === 'optimizer'
+                ? 'bg-violet-500 text-white shadow-md shadow-violet-500/20'
+                : 'text-slate-500 hover:bg-slate-100'
+              } `}
+          >
+            <Zap size={16} />
+            <span>一键优化</span>
+          </button>
+        </div>
+      </div>
+
       {/* Toast Notifications */}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
 
       {/* 主内容区 */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        <div className="max-w-4xl mx-auto space-y-4">
-          <ProcessScanner
-            processes={processes}
-            selectedPid={selectedPid}
-            onSelect={setSelectedPid}
-            onScan={handleScan}
-            scanning={scanning}
-          />
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4">
+        <div className="max-w-4xl mx-auto space-y-4 h-full flex flex-col">
 
-          <CoreGrid
-            cores={cores}
-            selectedCores={selectedCores}
-            onToggleCore={toggleCore}
-            onSelectAll={selectAll}
-            onSelectNone={selectNone}
-            onSelectPhysical={selectPhysical}
-            onSelectSMT={selectSMT}
-            cpuArch={cpuArch}
-            onSelectPartition0={selectPartition0}
-            onSelectPartition1={selectPartition1}
-          />
+          {/* Dashboard Tab */}
+          {activeTab === 'dashboard' && (
+            <>
+              <ProcessScanner
+                processes={processes}
+                selectedPid={selectedPid}
+                onSelect={setSelectedPid}
+                onScan={handleScan}
+                scanning={scanning}
+              />
 
-          <SettingsPanel
-            mode={mode}
-            onModeChange={setMode}
-            primaryCore={primaryCore}
-            onPrimaryCoreChange={setPrimaryCore}
-            coreCount={coreCount}
-            settings={settings}
-            onSettingChange={handleSettingChange}
-            onRemoveProfile={handleRemoveProfile}
-          />
+              <CoreGrid
+                cores={cores}
+                selectedCores={selectedCores}
+                onToggleCore={toggleCore}
+                onSelectAll={selectAll}
+                onSelectNone={selectNone}
+                onSelectPhysical={selectPhysical}
+                onSelectSMT={selectSMT}
+                cpuArch={cpuArch}
+                onSelectPartition0={selectPartition0}
+                onSelectPartition1={selectPartition1}
+              />
+            </>
+          )}
+
+          {/* Settings / Game Mode Tab */}
+          {activeTab === 'settings' && (
+            <SettingsPanel
+              mode={mode}
+              onModeChange={setMode}
+              primaryCore={primaryCore}
+              onPrimaryCoreChange={setPrimaryCore}
+              coreCount={coreCount}
+              settings={settings}
+              onSettingChange={handleSettingChange}
+              onRemoveProfile={handleRemoveProfile}
+            />
+          )}
+
+          {/* System Optimizer Tab */}
+          {activeTab === 'optimizer' && (
+            <SystemOptimizer />
+          )}
+
         </div>
       </div>
 
-      {/* 底部控制栏 */}
-      <div className="glass border-t border-slate-200/50 px-6 py-4">
-        <div className="max-w-4xl mx-auto">
-          <ControlBar
-            status={status}
-            onApplyConfig={handleApply}
-            onStop={handleStop}
-            onSaveProfile={handleSaveProfile}
-            cpuInfo={cpuInfo}
-            priority={priority}
-            onPriorityChange={setPriority}
-          />
+      {/* 底部控制栏 (仅在 Dashboard 显示) */}
+      {activeTab === 'dashboard' && (
+        <div className="glass border-t border-slate-200/50 px-6 py-4">
+          <div className="max-w-4xl mx-auto">
+            <ControlBar
+              status={status}
+              onApplyConfig={handleApply}
+              onStop={handleStop}
+              onSaveProfile={handleSaveProfile}
+              cpuInfo={cpuInfo}
+              priority={priority}
+              onPriorityChange={setPriority}
+            />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
