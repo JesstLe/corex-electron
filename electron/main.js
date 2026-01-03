@@ -1152,9 +1152,14 @@ ipcMain.handle('set-affinity', async (event, pid, coreMask, mode, primaryCore = 
   return await setAffinity(pid, coreMask, mode, primaryCore);
 });
 
-// Set Process Priority (IPC Handler) - 使用统一的辅助函数
+// Set Process Priority (IPC Handler) - 在失败时 reject Promise
 ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
-  return await setProcessPriority(pid, priority);
+  const result = await setProcessPriority(pid, priority);
+  if (result.success) {
+    return true;
+  } else {
+    throw new Error(result.error || '设置优先级失败');
+  }
 });
 
 // --- Power Plan IPC ---
