@@ -542,8 +542,8 @@ export default function SettingsPanel({
   const modes = [
     { id: 'dynamic', label: '自动分配', icon: Zap, desc: '正常优先级' },
     { id: 'static', label: '固定绑核', icon: Lock, desc: '绑定到优先核心，单核高优先级' },
-    { id: 'd2', label: '笔记本狂暴', icon: Scale, desc: '禁止超线程 + 高优先级 (降低积热)' },
-    { id: 'd3', label: '节能优先', icon: Leaf, desc: 'E-Core最低优先级' },
+    { id: 'd2', label: '笔记本狂暴', icon: Scale, desc: '深度优化温控与性能，消除积热掉帧' },
+    { id: 'd3', label: '极致狂暴', icon: Zap, desc: '卓越性能电源 + 实时优先级，隔离系统中断' },
   ];
 
   return (

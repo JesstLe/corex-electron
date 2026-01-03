@@ -621,26 +621,32 @@ function setAffinity(pid, coreMask, mode = 'dynamic', primaryCore = null) {
         }
       }
       else if (mode === 'd3') {
-        // 节能优先：优先使用高编号核心（通常是 E-Core），最低优先级
-        // 在 Intel 混合架构中，高编号核心通常是效能核心
-        priorityClass = 'Idle';
+        // 极致狂暴模式 (Ultimate Beast Mode)
+        // 策略：实时优先级 + 全核满载 (避让 Core 0) + 卓越性能电源
+        // 目的：不计功耗代价，压榨硬件极限性能，专为永劫无间等高负载网游设计
+        priorityClass = 'RealTime';
 
-        // 找出所有选中的核心
-        const selectedCores = [];
-        for (let i = 0; i < 64; i++) {
-          if ((mask & (1n << BigInt(i))) !== 0n) selectedCores.push(i);
+        // 核心避让策略：屏蔽 Core 0 (中断核心)
+        // 原理：Core 0 处理大量系统中断，屏蔽后可提供纯净计算环境，消除微卡顿
+        let core0Mask = 1n; // 000...001
+
+        // 如果当前 mask 包含 Core 0，且总核心数 > 1，则移除 Core 0
+        if ((mask & core0Mask) !== 0n && (mask ^ core0Mask) !== 0n) {
+          finalMask = mask & (~core0Mask);
+          console.log(`[UltimateMode] Core 0 Avoidance Active for PID ${pid} (Mask: ${finalMask.toString(2)})`);
+        } else {
+          finalMask = mask; // 无法避让 (如单核)，保持全核
         }
 
-        if (selectedCores.length > 1) {
-          // 只使用后半部分核心（更可能是 E-Core）
-          const halfIndex = Math.ceil(selectedCores.length / 2);
-          const efficiencyCores = selectedCores.slice(halfIndex);
-          let newMask = 0n;
-          efficiencyCores.forEach(idx => newMask |= (1n << BigInt(idx)));
-          finalMask = newMask;
-        }
-        // 如果只选了一个核心，保持不变
+        console.log(`[UltimateMode] Beast Mode Activated for PID ${pid}! Priority: RealTime`);
+
+        // 尝试切换电源计划到 "卓越性能" (Ultimate Performance)
+        const ultimateGuid = 'e9a42b02-d5df-448d-aa00-03f14749eb61';
+        exec(`powercfg /setactive ${ultimateGuid}`, (err) => {
+          if (!err) console.log('[UltimateMode] Power Plan switched to Ultimate Performance');
+        });
       }
+
 
       const safePid = Math.floor(pid);
       const safeMask = finalMask.toString();
