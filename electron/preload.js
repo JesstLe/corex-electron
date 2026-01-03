@@ -34,4 +34,8 @@ contextBridge.exposeInMainWorld('electron', {
   // System Optimizer
   getTweaks: () => ipcRenderer.invoke('get-tweaks'),
   applyTweaks: (ids) => ipcRenderer.invoke('apply-tweaks', ids),
+
+  // Config Sharing
+  exportConfig: () => ipcRenderer.invoke('export-config'),
+  importConfig: () => ipcRenderer.invoke('import-config'),
 });

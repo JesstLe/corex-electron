@@ -822,6 +822,36 @@ export default function SettingsPanel({
               <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
             </label>
           </div>
+
+          <div className="pt-4 border-t border-slate-100 flex gap-3">
+            <button
+              onClick={async () => {
+                const res = await window.electron.exportConfig();
+                if (res.success) {
+                  // Ideally show toast
+                  console.log('Export success', res.filePath);
+                }
+              }}
+              className="flex-1 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <Download size={16} />
+              导出配置
+            </button>
+            <button
+              onClick={async () => {
+                if (!confirm("导入配置将覆盖当前的核心调优设置 (Profiles, SmartTrim, ProBalance 等)，确定继续吗？")) return;
+                const res = await window.electron.importConfig();
+                if (res.success) {
+                  console.log('Import success');
+                  window.location.reload(); // Reload to apply all settings
+                }
+              }}
+              className="flex-1 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <Upload size={16} />
+              导入配置
+            </button>
+          </div>
         </div>
       </div>
     </div>

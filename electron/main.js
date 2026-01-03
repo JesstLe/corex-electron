@@ -1679,6 +1679,86 @@ ipcMain.on('app-quit', () => {
   app.quit();
 });
 
+// --- Config Import/Export IPC ---
+const { dialog } = require('electron');
+
+ipcMain.handle('export-config', async () => {
+  try {
+    const { filePath } = await dialog.showSaveDialog(mainWindow, {
+      title: '导出配置',
+      defaultPath: `nexus-config-${new Date().toISOString().slice(0, 10)}.tn`,
+      filters: [
+        { name: 'Task Nexus Config', extensions: ['tn', 'json'] }
+      ]
+    });
+
+    if (!filePath) return { success: false, cancelled: true };
+
+    fs.writeFileSync(filePath, JSON.stringify(appConfig, null, 2));
+    writeLog('INFO', `Config exported to ${filePath}`);
+    return { success: true, filePath };
+  } catch (error) {
+    writeLog('ERROR', 'Export failed', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('import-config', async () => {
+  try {
+    const { filePaths } = await dialog.showOpenDialog(mainWindow, {
+      title: '导入配置',
+      filters: [
+        { name: 'Task Nexus Config', extensions: ['tn', 'json'] }
+      ],
+      properties: ['openFile']
+    });
+
+    if (!filePaths || filePaths.length === 0) return { success: false, cancelled: true };
+
+    const content = fs.readFileSync(filePaths[0], 'utf-8');
+    let importedConfig = {};
+    try {
+      importedConfig = JSON.parse(content);
+    } catch (e) {
+      return { success: false, error: '文件格式错误 (非 JSON)' };
+    }
+
+    // 简单校验
+    if (!importedConfig.profiles && !importedConfig.defaultRules) {
+      return { success: false, error: '无效的配置文件 (缺少关键字段)' };
+    }
+
+    // 策略：覆盖核心调优参数，保留部分本地偏好
+    // 覆盖: profiles, defaultRules, gameList, excludeList, smartTrim, proBalance, throttleList, cpuAffinityMode
+    // 保留: width, height, x, y, launchOnStartup, closeToTray
+
+    const newConfig = {
+      ...appConfig,
+      profiles: importedConfig.profiles || [],
+      defaultRules: importedConfig.defaultRules || DEFAULT_CONFIG.defaultRules,
+      gameList: importedConfig.gameList || DEFAULT_CONFIG.gameList,
+      excludeList: importedConfig.excludeList || DEFAULT_CONFIG.excludeList,
+      smartTrim: importedConfig.smartTrim || DEFAULT_CONFIG.smartTrim,
+      proBalance: importedConfig.proBalance || DEFAULT_CONFIG.proBalance,
+      throttleList: importedConfig.throttleList || DEFAULT_CONFIG.throttleList,
+      // 允许导入亲和性模式，如果是共享配置，通常包含模式选择
+      cpuAffinityMode: importedConfig.cpuAffinityMode !== undefined ? importedConfig.cpuAffinityMode : appConfig.cpuAffinityMode
+    };
+
+    appConfig = newConfig;
+    saveConfig();
+
+    // 立即应用新配置 (Rescan)
+    scanAndApplyProfiles();
+
+    writeLog('INFO', `Config imported from ${filePaths[0]}`);
+    return { success: true, config: appConfig };
+  } catch (error) {
+    writeLog('ERROR', 'Import failed', error);
+    return { success: false, error: error.message };
+  }
+});
+
 ipcMain.on('window-minimize', () => mainWindow?.minimize());
 ipcMain.on('window-toggle-maximize', () => {
   if (mainWindow) {
