@@ -389,14 +389,20 @@ function SmartTrimControl({ settings, onUpdate }) {
   );
 }
 
-// 压制列表编辑器组件
-function ThrottleListEditor({ items = [], onUpdate }) {
-  const [newItem, setNewItem] = useState('');
+// 压制列表编辑器组件 - 改为下拉选择
+function ThrottleListEditor({ items = [], onUpdate, processes = [] }) {
+  const [selectedProcess, setSelectedProcess] = useState('');
+
+  // 提取唯一的进程名并排序
+  const uniqueProcessNames = React.useMemo(() => {
+    const names = new Set(processes.map(p => p.name));
+    return Array.from(names).sort((a, b) => a.localeCompare(b));
+  }, [processes]);
 
   const add = () => {
-    if (newItem && !items.includes(newItem)) {
-      onUpdate([...items, newItem]);
-      setNewItem('');
+    if (selectedProcess && !items.includes(selectedProcess)) {
+      onUpdate([...items, selectedProcess]);
+      setSelectedProcess('');
     }
   };
 
@@ -407,15 +413,28 @@ function ThrottleListEditor({ items = [], onUpdate }) {
   return (
     <div className="mt-2 space-y-2">
       <div className="flex gap-2">
-        <input
-          type="text"
-          value={newItem}
-          onChange={(e) => setNewItem(e.target.value)}
-          placeholder="chrome.exe"
-          className="flex-1 px-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/30"
-          onKeyDown={(e) => e.key === 'Enter' && add()}
-        />
-        <button onClick={add} className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600">添加</button>
+        <div className="relative flex-1">
+          <select
+            value={selectedProcess}
+            onChange={(e) => setSelectedProcess(e.target.value)}
+            className="w-full appearance-none px-3 py-1.5 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/30 text-slate-700"
+          >
+            <option value="">选择进程...</option>
+            {uniqueProcessNames.map(name => (
+              <option key={name} value={name} disabled={items.includes(name)}>
+                {name} {items.includes(name) ? '(已添加)' : ''}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+        </div>
+        <button
+          onClick={add}
+          disabled={!selectedProcess}
+          className="px-3 py-1.5 text-sm bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          添加
+        </button>
       </div>
       <div className="max-h-32 overflow-y-auto space-y-1">
         {items.length === 0 && <div className="text-xs text-slate-400 text-center py-2">没有添加任何压制程序</div>}
@@ -484,7 +503,8 @@ export default function SettingsPanel({
   coreCount = 16,
   settings = {},
   onSettingChange = () => { },
-  onRemoveProfile = () => { }
+  onRemoveProfile = () => { },
+  processes = []
 }) {
   const coreOptions = Array.from({ length: coreCount }, (_, i) => i);
 
@@ -669,6 +689,7 @@ export default function SettingsPanel({
         <ThrottleListEditor
           items={settings.throttleList || []}
           onUpdate={(list) => onSettingChange('throttleList', list)}
+          processes={processes}
         />
       </div>
 

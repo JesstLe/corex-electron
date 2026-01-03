@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { Search, RefreshCw, CheckSquare, Square, Zap, Gauge, MoreHorizontal, ArrowUp, ArrowDown, Minus } from 'lucide-react';
 
 const PRIORITY_MAP_CN = {
@@ -279,15 +280,16 @@ export default function ProcessScanner({ processes, selectedPid, onSelect, onSca
         </div>
       )}
 
-      {/* Inline Context Menu */}
-      {menuState.visible && (
+      {/* Inline Context Menu (Portaled) */}
+      {menuState.visible && typeof document !== 'undefined' && ReactDOM.createPortal(
         <SimpleContextMenu
           x={menuState.x}
           y={menuState.y}
           process={menuState.process}
           onClose={() => setMenuState({ ...menuState, visible: false })}
           onAction={handleMenuAction}
-        />
+        />,
+        document.body
       )}
     </div>
   );

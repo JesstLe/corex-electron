@@ -345,40 +345,50 @@ function getProcessesList() {
       const lines = stdout.split('\n');
 
       if (isWin) {
-        // 解析 CPU使用率数据 (First Pass)
+        // 第一步：解析 Header 确定列索引
+        let headerMap = { pid: -1, name: -1, cpu: -1 };
+        let hasHeader = false;
+
         lines.forEach(line => {
-          if (!line.trim() || line.includes('Node,') || line.includes('IDProcess')) return;
+          if (!line.trim()) return;
+
+          // Check for Header Line
+          if (!hasHeader && (line.includes('IDProcess') || line.includes('Name'))) {
+            const hParts = line.split(',');
+            hParts.forEach((h, idx) => {
+              const hTrim = h.trim();
+              if (hTrim === 'IDProcess') headerMap.pid = idx;
+              else if (hTrim === 'Name') headerMap.name = idx;
+              else if (hTrim === 'PercentProcessorTime') headerMap.cpu = idx;
+            });
+            hasHeader = true;
+            return;
+          }
+
+          // 如果没有 Header，尝试猜测 (Fallback)
+          if (!hasHeader) {
+            // 假定 Node, IDProcess, Name, PercentProcessorTime (或 Node, Name, ID, CPU?)
+            // 暂跳过直到找到 Header，或者如果某些系统不输出 Header (很少见)
+            // wmic /FORMAT:CSV 必定输出 Header 在第二行
+            return;
+          }
+
           const parts = line.split(',');
-          // CSV: Node, IDProcess, Name, PercentProcessorTime
-          if (parts.length >= 4) {
-            const pid = parseInt(parts[1].trim(), 10);
-            let name = parts[2].trim();
-            const cpu = parseFloat(parts[3].trim()); // Parse CPU usage string
+          // 根据索引提取
+          if (parts.length > 2) {
+            const pidStr = (parts[headerMap.pid] || '').trim();
+            const nameStr = (parts[headerMap.name] || '').trim();
+            const cpuStr = headerMap.cpu !== -1 ? (parts[headerMap.cpu] || '0').trim() : '0';
+
+            const pid = parseInt(pidStr, 10);
+            let name = nameStr;
+            const cpu = parseFloat(cpuStr);
 
             // 过滤无效进程
             if (!name || name === '_Total' || name === 'Idle' || isNaN(pid) || pid <= 0) return;
             if (!name.toLowerCase().endsWith('.exe')) name = name + '.exe';
 
-            // Note: Currently we don't have cpu in parts? 
-            // Wait, previous code didn't parse CPU?
-            // "wmic ... get Name,IDProcess,PercentProcessorTime"
-            // The previous code lines 348-358 seemed to ignore PercentProcessorTime?
-            // Ah, looking at previous code: "const parts = line.split(',');"
-            // "const pid = parseInt(parts[1]...); let name = parts[2]..."
-            // It didn't extract CPU? That's a bug in previous code if so, or I missed it.
-            // Let's check the view... Previous view showed "processes.push({ pid, name });"
-            // So CPU was missing? But the UI shows CPU colors?
-            // "src/App.jsx" line 88 shows mock data has CPU.
-            // "getProcessesList" seems to have been missing CPU?
-            // Re-reading Step 980 lines 357: "processes.push({ pid, name });". 
-            // YES. The real backend WAS NOT returning CPU usage.
-            // I should fix this too. "PercentProcessorTime" is parts[3].
-
             processes.push({ pid, name, cpu: (!isNaN(cpu) ? cpu / os.cpus().length : 0) });
-            // Note: WMI PercentProcessorTime is total across all cores? Usually it's strictly percentage.
-            // But PerfFormattedData is instant. Often requires dividing by core count for "Task Manager" style if >100.
-            // Actually, PerfFormattedData_PerfProc_Process PercentProcessorTime can go safely up to 100 * Cores.
-            // Let's normalize it roughly or leave as is. Task Manager shows 0-100% total.
           }
         });
 
@@ -1399,29 +1409,6 @@ foreach($proc in $processes) {
 }
 `;
 
-    // 设置进程优先级
-    ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
-      if (!pid || !priority) return { success: false, error: '参数缺失' };
-
-      const isWin = process.platform === 'win32';
-      if (!isWin) return { success: false, error: '仅支持 Windows' }; // TODO: implementing renice for linux/mac
-
-      return new Promise((resolve) => {
-        const safePid = parseInt(pid, 10);
-        // Validate Priority Enum Safety
-        const allowed = ['RealTime', 'High', 'AboveNormal', 'Normal', 'BelowNormal', 'Idle'];
-        if (!allowed.includes(priority)) return resolve({ success: false, error: '无效的优先级' });
-
-        const cmd = `powershell -Command "try { $p = Get-Process -Id ${safePid} -ErrorAction Stop; $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::${priority}; } catch { exit 1 }"`;
-
-        exec(cmd, (error) => {
-          if (error) resolve({ success: false, error: '设置失败 (可能需要管理员权限)' });
-          else resolve({ success: true });
-        });
-      });
-    });
-
-
     return new Promise((resolve, reject) => {
       exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
         { timeout: 30000 },
@@ -1450,6 +1437,29 @@ foreach($proc in $processes) {
     };
   }
 });
+
+// 设置进程优先级
+ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
+  if (!pid || !priority) return { success: false, error: '参数缺失' };
+
+  const isWin = process.platform === 'win32';
+  if (!isWin) return { success: false, error: '仅支持 Windows' }; // TODO: implementing renice for linux/mac
+
+  return new Promise((resolve) => {
+    const safePid = parseInt(pid, 10);
+    // Validate Priority Enum Safety
+    const allowed = ['RealTime', 'High', 'AboveNormal', 'Normal', 'BelowNormal', 'Idle'];
+    if (!allowed.includes(priority)) return resolve({ success: false, error: '无效的优先级' });
+
+    const cmd = `powershell -Command "try { $p = Get-Process -Id ${safePid} -ErrorAction Stop; $p.PriorityClass = [System.Diagnostics.ProcessPriorityClass]::${priority}; } catch { exit 1 }"`;
+
+    exec(cmd, (error) => {
+      if (error) resolve({ success: false, error: '设置失败 (可能需要管理员权限)' });
+      else resolve({ success: true });
+    });
+  });
+});
+
 
 ipcMain.handle('get-profiles', () => {
   return appConfig.profiles || [];

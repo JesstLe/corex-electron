@@ -419,6 +419,7 @@ function App() {
               settings={settings}
               onSettingChange={handleSettingChange}
               onRemoveProfile={handleRemoveProfile}
+              processes={processes}
             />
           )}
 
