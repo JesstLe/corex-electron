@@ -1015,10 +1015,6 @@ function fallbackTasklist(resolve, reject) {
   });
 }
 
-ipcMain.handle('set-affinity', (event, pid, coreMask, mode) => {
-  return setAffinity(pid, coreMask, mode);
-});
-
 // Set Process Priority
 ipcMain.handle('set-process-priority', async (event, { pid, priority }) => {
   return new Promise((resolve, reject) => {
