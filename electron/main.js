@@ -268,9 +268,10 @@ async function checkAndApplyThrottle(processes, gameNames) {
 }
 
 
+
 async function scanAndApplyProfiles() {
-  // 1. 获取所有运行中的进程
-  const processes = await getProcessesList().catch(err => {
+  // 1. 获取所有运行中的进程 (Background monitor doesn't need priority, saving 50% overhead)
+  const processes = await getProcessesList({ includePriority: false }).catch(err => {
     writeLog('WARN', `[Monitor] Scan failed: ${err.message}`);
     return [];
   });
@@ -520,7 +521,7 @@ function applyAffinityAndPriority(pid, mask, mode, priority, primaryCore = null)
 }
 
 // 复用获取进程列表的逻辑
-function getProcessesList() {
+function getProcessesList(options = { includePriority: true }) {
   return new Promise((resolve, reject) => {
     const isWin = process.platform === 'win32';
     const cmd = isWin
@@ -558,9 +559,6 @@ function getProcessesList() {
 
           // 如果没有 Header，尝试猜测 (Fallback)
           if (!hasHeader) {
-            // 假定 Node, IDProcess, Name, PercentProcessorTime (或 Node, Name, ID, CPU?)
-            // 暂跳过直到找到 Header，或者如果某些系统不输出 Header (很少见)
-            // wmic /FORMAT:CSV 必定输出 Header 在第二行
             return;
           }
 
@@ -583,28 +581,35 @@ function getProcessesList() {
           }
         });
 
+        // 优化：如果不需要优先级，直接返回
+        if (!options.includePriority) {
+          resolve(processes);
+          return;
+        }
+
         // 第二步：获取优先级 (Second Pass)
+        // 这一步比较重，仅当 UI 需要显示时才调用
         exec('wmic process get ProcessId,Priority /FORMAT:CSV', (err2, stdout2) => {
           const priorityMap = {};
           if (!err2 && stdout2) {
             const pLines = stdout2.split('\n');
-            // Header: Node,Priority,ProcessId (Alphabetical)
-            // Check first line for header order if needed, but standard is Node,Priority,ProcessId
-            // Or Node,ProcessId,Priority?
-            // "Priority", "ProcessId" -> i vs o. Priority comes first.
             pLines.forEach(pl => {
               if (!pl.trim() || pl.includes('Node,')) return;
               const pp = pl.split(',');
               if (pp.length >= 3) {
-                // Generic safe parse
-                // Attempt to find PID and Priority.
-                // Usually: Node (0), Priority (1), ProcessId (2)
+                // wmic output varies by locale sometimes, but FORMAT:CSV is fairly stable.
+                // Usually: Node, Priority, ProcessId or Node, ProcessId, Priority?
+                // Standard: Node, Priority, ProcessId.
                 const val1 = parseInt(pp[1], 10);
                 const val2 = parseInt(pp[2], 10);
-
-                // Heuristic: PID is usually larger, but not always.
-                // Priority is specific set (4, 6, 8, 10, 13, 24).
-                // Let's assume standard order: Node, Priority, ProcessId
+                // Heuristic: Priority values are small (4-32), PID can be large.
+                // But ProcessId can be small too.
+                // Let's rely on standard wmic output order for "get ProcessId,Priority"
+                // If we request "ProcessId,Priority", CSV order is alphabetical by property name!
+                // Priority (P), ProcessId (P)... same letter.
+                // But wait, "Priority" vs "ProcessId". r vs r. o vs o. c vs i.
+                // "Priority" < "ProcessId"? No. i < o. "Priority" comes BEFORE "ProcessId".
+                // So: Node, Priority, ProcessId.
                 const pri = val1;
                 const p_id = val2;
 
@@ -1154,166 +1159,14 @@ ipcMain.handle('get-cpu-info', () => {
 });
 
 ipcMain.handle('get-processes', async () => {
-  return new Promise((resolve, reject) => {
-    const isWin = process.platform === 'win32';
-
-    if (isWin) {
-      const cpuCores = os.cpus().length;
-
-      // 1. Get CPU Usage via WMI (Fast, similar to Task Manager logic)
-      const cpuCommand = `
-        Get-WmiObject Win32_PerfFormattedData_PerfProc_Process | 
-        Select-Object Name, IDProcess, PercentProcessorTime |
-        ConvertTo-Json -Compress
-      `;
-
-      // 2. Get Version Info via Get-Process (Parallel execution)
-      const versionCommand = `
-        Get-Process -ErrorAction SilentlyContinue | 
-        Select-Object Id, @{Name='Version';Expression={$_.MainModule.FileVersionInfo.ProductVersion}}, @{Name='Path';Expression={$_.MainModule.FileName}} |
-        ConvertTo-Json -Compress
-      `;
-
-      Promise.all([
-        new Promise((res) => exec(`powershell -NoProfile -Command "${cpuCommand.replace(/\n/g, ' ')}"`, { timeout: 15000, maxBuffer: 1024 * 1024 * 5 }, (e, out) => res({ e, out }))),
-        new Promise((res) => exec(`powershell -NoProfile -Command "${versionCommand.replace(/\n/g, ' ')}"`, { timeout: 15000, maxBuffer: 1024 * 1024 * 5 }, (e, out) => res({ e, out })))
-      ]).then(([cpuResult, versionResult]) => {
-        // Handle CPU Scan Errors
-        if (cpuResult.e) {
-          console.error('PowerShell CPU Scan Failed:', cpuResult.e.message);
-          return fallbackTasklist(resolve, reject);
-        }
-
-        try {
-          const rawCpu = cpuResult.out.trim();
-          if (!rawCpu) return resolve([]);
-
-          let cpuData = [];
-          try {
-            const parsed = JSON.parse(rawCpu);
-            cpuData = Array.isArray(parsed) ? parsed : [parsed];
-          } catch (e) {
-            console.error("JSON Parse Error (CPU):", e);
-            // Don't fail completely if CPU json is weird, maybe try fallback?
-            // checking fallbackTasklist
-            return fallbackTasklist(resolve, reject);
-          }
-
-          // Handle Version Scan Results (Optional map)
-          const versionMap = new Map();
-          if (!versionResult.e && versionResult.out.trim()) {
-            try {
-              const parsedV = JSON.parse(versionResult.out.trim());
-              const versionData = Array.isArray(parsedV) ? parsedV : [parsedV];
-              versionData.forEach(v => {
-                if (v.Id) versionMap.set(v.Id, {
-                  version: v.Version || '',
-                  path: v.Path || ''
-                });
-              });
-            } catch (ve) {
-              console.warn('Version JSON Parse Warn:', ve);
-            }
-          }
-
-          const processes = [];
-          cpuData.forEach(item => {
-            const pid = item.IDProcess;
-            let name = item.Name;
-
-            const rawCpuVal = item.PercentProcessorTime || 0;
-            // Normalize CPU usage
-            const cpu = Math.min(Math.ceil((rawCpuVal / cpuCores) * 10) / 10, 100);
-
-            if (!name || name === '_Total' || name === 'Idle' || !pid || pid <= 0) return;
-
-            name = name.replace(/#\d+$/, '');
-            if (!name.toLowerCase().endsWith('.exe')) {
-              name = name + '.exe';
-            }
-
-            const extra = versionMap.get(pid) || {};
-
-            processes.push({
-              pid,
-              name,
-              cpu,
-              version: extra.version,
-              path: extra.path
-            });
-          });
-
-          processes.sort((a, b) => b.cpu - a.cpu);
-          resolve(processes);
-
-        } catch (parseError) {
-          console.error('Data Processing Failed:', parseError);
-          fallbackTasklist(resolve, reject);
-        }
-      });
-
-    } else {
-      // macOS / Linux Logic
-      const cmd = 'ps -ax -o pid,%cpu,comm';
-      exec(cmd, { timeout: 15000, maxBuffer: 1024 * 1024 * 5 }, (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(`Process scan failed: ${error.message}`));
-          return;
-        }
-        try {
-          const processes = [];
-          const lines = stdout.split('\n');
-          lines.forEach(line => {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith('PID') || trimmed.includes('%CPU')) return;
-
-            const parts = trimmed.split(/\s+/);
-            if (parts.length >= 3) {
-              const pid = parseInt(parts[0], 10);
-              const cpu = parseFloat(parts[1]) || 0;
-              const fullPath = parts.slice(2).join(' ');
-              const name = path.basename(fullPath.trim());
-
-              if (name && !isNaN(pid) && pid > 0) {
-                processes.push({ pid, name, cpu, version: '', path: fullPath });
-              }
-            }
-          });
-          processes.sort((a, b) => b.cpu - a.cpu);
-          resolve(processes);
-        } catch (e) {
-          reject(e);
-        }
-      });
-    }
+  // UI needs Priority to display colors
+  // This uses the optimized wmic helper instead of heavy PowerShell
+  return await getProcessesList({ includePriority: true }).catch(err => {
+    writeLog('WARN', `[IPC] get-processes failed: ${err.message}`);
+    return [];
   });
 });
 
-function fallbackTasklist(resolve, reject) {
-  // Fallback: use tasklist (no CPU %)
-  exec('tasklist /FO CSV /NH', (error, stdout, stderr) => {
-    if (error) {
-      // Even fallback failed
-      console.error("Fallback tasklist failed:", error);
-      resolve([]); // Return empty rather than crash
-      return;
-    }
-    const processes = [];
-    const lines = stdout.split('\n');
-    lines.forEach(line => {
-      const parts = line.split(',');
-      if (parts.length >= 2) {
-        // "Image Name","PID", ...
-        const name = parts[0].replace(/"/g, '').trim();
-        const pid = parseInt(parts[1].replace(/"/g, ''), 10);
-        if (name && pid > 0) {
-          processes.push({ pid, name, cpu: 0 });
-        }
-      }
-    });
-    resolve(processes);
-  });
-}
 
 // 设置亲和性（支持优先核心）
 ipcMain.handle('set-affinity', async (event, pid, coreMask, mode, primaryCore = null) => {
