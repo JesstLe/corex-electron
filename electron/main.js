@@ -1133,77 +1133,50 @@ ipcMain.handle('list-power-plans', async () => {
 let currentTimerResolution = 0; // 0 = disabled
 
 // 设置定时器分辨率 (Windows) - 支持 0.5ms 等高精度
+let resolutionProcess = null;
+
+// 设置定时器分辨率 (Windows) - 使用持久化进程保持分辨率
 ipcMain.handle('set-timer-resolution', async (event, periodMs) => {
   if (process.platform !== 'win32') {
     return { success: false, error: '仅支持 Windows' };
   }
 
-  // periodMs: 0 = disable
-  // NtSetTimerResolution 使用 100ns 为单位
-  // 1ms = 10,000 units
-  // 0.5ms = 5,000 units
-  // 最大分辨率通常为 0.5ms (5000)
+  // 1. 清理旧进程 (Reset)
+  if (resolutionProcess) {
+    try {
+      resolutionProcess.kill();
+    } catch (e) { /* ignore */ }
+    resolutionProcess = null;
+  }
 
-  const enable = periodMs > 0;
-  const desiredUnits = enable ? Math.round(periodMs * 10000) : 0;
+  // 如果 periodMs 为 0 或默认值，则只清理即可
+  if (!periodMs || periodMs >= 15) {
+    currentTimerResolution = 15.6;
+    return { success: true, actual: 15.6 };
+  }
 
-  // C# 代码定义: 调用 ntdll.dll 的 NtSetTimerResolution
-  const csharpCode = `
-    using System;
-    using System.Runtime.InteropServices;
-    
-    public class HighResTimer {
-      [DllImport("ntdll.dll", SetLastError = true)]
-      public static extern int NtSetTimerResolution(uint DesiredTime, bool SetResolution, out uint ActualTime);
-      
-      public static uint Set(uint units) {
-        uint actual;
-        // SetResolution = true (开启), false (关闭/恢复默认)
-        // 注意：关闭时 DesiredTime 设为 0 即可，或者使用 false
-        NtSetTimerResolution(units, ${enable}, out actual);
-        return actual;
-      }
-    }
-  `;
+  // 2. 启动新进程 (Set & Hold)
+  const desiredUnits = Math.round(periodMs * 10000);
 
-  // PowerShell 脚本
-  const script = enable
-    ? `Add-Type -TypeDefinition '${csharpCode}'; [HighResTimer]::Set(${desiredUnits})`
-    : `Add-Type -TypeDefinition '${csharpCode}'; [HighResTimer]::Set(0)`; // SetResolution=false logic handled in C# string interpolation above roughly, actually let's keep it simple:
-
-  // 更严谨的 PowerShell 构建
-  // 为了避免 Add-Type 重复定义错误，如果不重启 App 可能会报错，
-  // 实际生产中最好把 TypeDefinition 放在全局或检查 try-catch。
-  // 这里简化处理：使用唯一的类名或忽略错误。
-  const uniqueId = Date.now(); // 防止类名冲突（简单版）
-  // 实际上 Add-Type 在同一进程只能运行一次相同的类定义。
-  // 更好的方式是只定义一次。但由于是在 exec 中，每次都是新 PowerShell 进程，所以没问题。
-
-  const psCommand = `
+  // PowerShell 脚本：设置分辨率并挂起
+  const psScript = `
     $code = @"
     using System;
     using System.Runtime.InteropServices;
-    public class NativeTimer {
+    public class HighResTimer {
       [DllImport("ntdll.dll")]
       public static extern int NtSetTimerResolution(uint DesiredTime, bool SetResolution, out uint ActualTime);
     }
 "@
     Add-Type -TypeDefinition $code
-    $actual = 0
-    [NativeTimer]::NtSetTimerResolution(${desiredUnits}, $${enable}, [ref]$actual)
-    Write-Output $actual
-  `;
-
-  return new Promise((resolve) => {
-    exec(`powershell -NoProfile -Command "${psCommand}"`, (error, stdout) => {
       if (error) {
         console.error('Timer resolution error:', error.message);
         // 回退到旧方法（如果是 1ms 以上）
         if (periodMs >= 1) {
           const fallbackScript = enable
-            ? `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinMM { [DllImport("winmm.dll")] public static extern uint timeBeginPeriod(uint period); }'; [WinMM]::timeBeginPeriod(${Math.round(periodMs)})`
-            : `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinMM { [DllImport("winmm.dll")] public static extern uint timeEndPeriod(uint period); }'; [WinMM]::timeEndPeriod(1)`;
-          exec(`powershell -NoProfile -Command "${fallbackScript}"`, () => { });
+            ? `Add-Type - TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinMM { [DllImport("winmm.dll")] public static extern uint timeBeginPeriod(uint period); }';[WinMM]:: timeBeginPeriod(${ Math.round(periodMs) })`
+            : `Add - Type - TypeDefinition 'using System; using System.Runtime.InteropServices; public class WinMM { [DllImport("winmm.dll")] public static extern uint timeEndPeriod(uint period); }';[WinMM]:: timeEndPeriod(1)`;
+          exec(`powershell - NoProfile - Command "${fallbackScript}"`, () => { });
         }
         resolve({ success: false, error: error.message });
       } else {
@@ -1213,7 +1186,7 @@ ipcMain.handle('set-timer-resolution', async (event, periodMs) => {
 
         currentTimerResolution = enable ? (actualMs || periodMs) : 0;
 
-        console.log(`Timer resolution set. Desired: ${periodMs}ms, Actual System: ${actualMs}ms`);
+        console.log(`Timer resolution set.Desired: ${ periodMs } ms, Actual System: ${ actualMs } ms`);
         resolve({ success: true, resolution: currentTimerResolution });
       }
     });
@@ -1311,56 +1284,56 @@ ipcMain.handle('clear-memory', async () => {
     // Windows: 使用 PowerShell 调用系统 API 清空 Standby List
     // 需要管理员权限才能有效
     const psScript = `
-      Add-Type -TypeDefinition @"
-        using System;
-        using System.Runtime.InteropServices;
-        public class MemoryCleaner {
-          [DllImport("psapi.dll")]
-          public static extern bool EmptyWorkingSet(IntPtr hProcess);
-          
-          [DllImport("kernel32.dll")]
-          public static extern IntPtr GetCurrentProcess();
-        }
-"@
+  Add - Type - TypeDefinition @"
+  using System;
+  using System.Runtime.InteropServices;
+  public class MemoryCleaner {
+    [DllImport("psapi.dll")]
+    public static extern bool EmptyWorkingSet(IntPtr hProcess);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentProcess();
+  }
+  "@
       # 清理当前进程的工作集
-      [MemoryCleaner]::EmptyWorkingSet([MemoryCleaner]::GetCurrentProcess())
+  [MemoryCleaner]:: EmptyWorkingSet([MemoryCleaner]:: GetCurrentProcess())
       
       # 尝试调用系统缓存清理
-      $processes = Get-Process | Where-Object {$_.WorkingSet64 -gt 50MB}
-      foreach ($proc in $processes) {
-        try {
-          [MemoryCleaner]::EmptyWorkingSet($proc.Handle)
-        } catch {}
-      }
-    `;
+  $processes = Get - Process | Where - Object { $_.WorkingSet64 - gt 50MB }
+  foreach($proc in $processes) {
+    try {
+      [MemoryCleaner]:: EmptyWorkingSet($proc.Handle)
+    } catch { }
+  }
+  `;
 
     return new Promise((resolve, reject) => {
-      exec(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript.replace(/"/g, '\\"').replace(/\n/g, ' ')}"`,
-        { timeout: 30000 },
-        (error, stdout, stderr) => {
-          // 等待一小段时间让系统更新内存状态
-          setTimeout(() => {
-            const afterFree = os.freemem();
-            const freedMB = Math.round((afterFree - beforeFree) / 1024 / 1024);
+      exec(`powershell - NoProfile - ExecutionPolicy Bypass - Command "${psScript.replace(/" / g, '\\"').replace(/\n/g, ' ')}"`,
+{ timeout: 30000 },
+(error, stdout, stderr) => {
+  // 等待一小段时间让系统更新内存状态
+  setTimeout(() => {
+    const afterFree = os.freemem();
+    const freedMB = Math.round((afterFree - beforeFree) / 1024 / 1024);
 
-            resolve({
-              success: true,
-              freedMB: Math.max(0, freedMB),
-              message: freedMB > 0 ? `已释放 ${freedMB} MB 内存` : '内存已优化'
-            });
-          }, 500);
-        }
+    resolve({
+      success: true,
+      freedMB: Math.max(0, freedMB),
+      message: freedMB > 0 ? `已释放 ${freedMB} MB 内存` : '内存已优化'
+    });
+  }, 500);
+}
       );
     });
   } else {
-    // macOS/Linux: 使用 purge 命令 (需要 sudo)
-    // 这里只返回一个提示，因为 purge 需要 root 权限
-    return {
-      success: false,
-      freedMB: 0,
-      message: 'macOS 需要管理员权限执行 purge 命令'
-    };
-  }
+  // macOS/Linux: 使用 purge 命令 (需要 sudo)
+  // 这里只返回一个提示，因为 purge 需要 root 权限
+  return {
+    success: false,
+    freedMB: 0,
+    message: 'macOS 需要管理员权限执行 purge 命令'
+  };
+}
 });
 
 ipcMain.handle('get-profiles', () => {
