@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, Lock, Scale, Leaf, ChevronDown, Trash2, HardDrive, RefreshCw } from 'lucide-react';
+import { Zap, Lock, Scale, Leaf, ChevronDown, Trash2, HardDrive, RefreshCw, Download, Upload } from 'lucide-react';
 
 // 内存清理组件
 function MemoryCleaner() {

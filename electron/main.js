@@ -591,7 +591,7 @@ function getProcessesList(options = { includePriority: true }) {
         // Task 1: Priority
         if (options.includePriority) {
           promises.push(new Promise(res => {
-            exec('wmic process get ProcessId,Priority /FORMAT:CSV', (err2, stdout2) => {
+            exec('wmic process get ProcessId,Priority /FORMAT:CSV', { timeout: 8000 }, (err2, stdout2) => {
               const priorityMap = {};
               if (!err2 && stdout2) {
                 const pLines = stdout2.split('\n');
@@ -616,7 +616,7 @@ function getProcessesList(options = { includePriority: true }) {
         // Task 2: Path (Fix for UI Crash)
         if (options.includePath) {
           promises.push(new Promise(res => {
-            exec('wmic process get ProcessId,ExecutablePath /FORMAT:CSV', (err3, stdout3) => {
+            exec('wmic process get ProcessId,ExecutablePath /FORMAT:CSV', { timeout: 8000 }, (err3, stdout3) => {
               const pathMap = {};
               if (!err3 && stdout3) {
                 const lines3 = stdout3.split('\n');
@@ -1202,8 +1202,8 @@ ipcMain.handle('get-cpu-info', () => {
 });
 
 ipcMain.handle('get-processes', async () => {
-  // UI needs Priority + Path (for game detection/icons)
-  return await getProcessesList({ includePriority: true, includePath: true }).catch(err => {
+  // UI needs Priority (for colors). Path is NOT needed (saves 1 wmic call).
+  return await getProcessesList({ includePriority: true, includePath: false }).catch(err => {
     writeLog('WARN', `[IPC] get-processes failed: ${err.message}`);
     return [];
   });
