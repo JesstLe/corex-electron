@@ -145,7 +145,7 @@ pub async fn apply_tweaks(_tweak_ids: &[String]) -> AppResult<serde_json::Value>
 /// 获取系统当前定时器分辨率 (单位: ms)
 #[cfg(windows)]
 pub fn get_timer_resolution() -> AppResult<f64> {
-    use windows::Win32::System::WindowsProgramming::{NtQueryTimerResolution};
+    use windows::Wdk::System::SystemInformation::{NtQueryTimerResolution};
 
     unsafe {
         let mut min: u32 = 0;
@@ -166,7 +166,16 @@ pub fn get_timer_resolution() -> AppResult<f64> {
 /// 设置为 0 表示关闭 (恢复默认)
 #[cfg(windows)]
 pub fn set_timer_resolution(res_ms: f64) -> AppResult<f64> {
-    use windows::Win32::System::WindowsProgramming::{NtQueryTimerResolution, NtSetTimerResolution};
+    use windows::Wdk::System::SystemInformation::{NtQueryTimerResolution};
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtSetTimerResolution(
+            RequestedResolution: u32,
+            SetResolution: u8,
+            ActualResolution: *mut u32,
+        ) -> i32;
+    }
 
     unsafe {
         // 先查询范围
@@ -190,10 +199,10 @@ pub fn set_timer_resolution(res_ms: f64) -> AppResult<f64> {
         let mut actual: u32 = 0;
         let status = NtSetTimerResolution(res_val, set, &mut actual);
         
-        if status.0 == 0 || status.0 == 0x00000000u32 {
+        if status == 0 {
             Ok(actual as f64 / 10000.0)
         } else {
-            Err(AppError::SystemError(format!("NtSetTimerResolution failed: 0x{:X}", status.0)))
+            Err(AppError::SystemError(format!("NtSetTimerResolution failed: 0x{:X}", status)))
         }
     }
 }
