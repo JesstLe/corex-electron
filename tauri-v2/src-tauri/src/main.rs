@@ -451,6 +451,16 @@ pub fn run() {
                 hardware::start_cpu_monitor(app_handle).await;
             });
 
+            // 启动时最小化到托盘 (如果配置启用)
+            if let Ok(cfg) = config::get_config_sync() {
+                if cfg.start_minimized {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.hide();
+                        tracing::info!("Window hidden on startup (start_minimized enabled)");
+                    }
+                }
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

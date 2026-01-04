@@ -296,6 +296,8 @@ pub struct AppConfig {
     pub launch_on_startup: bool,
     /// 关闭时最小化到托盘
     pub close_to_tray: bool,
+    /// 启动时最小化窗口
+    pub start_minimized: bool,
     /// CPU 亲和性模式
     pub cpu_affinity_mode: String,
     /// 进程策略列表
@@ -325,6 +327,7 @@ impl Default for AppConfig {
             y: None,
             launch_on_startup: false,
             close_to_tray: false,
+            start_minimized: false,
             cpu_affinity_mode: "dynamic".to_string(),
             profiles: Vec::new(),
             default_rules: DefaultRules::default(),

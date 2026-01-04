@@ -5,6 +5,12 @@
 use crate::{AppError, AppResult};
 use serde::{Deserialize, Serialize};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// 优化项定义
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TweakInfo {
@@ -109,8 +115,11 @@ pub async fn apply_tweaks(tweak_ids: &[String]) -> AppResult<serde_json::Value> 
             if let Some(tweak) = all_tweaks.get(id.as_str()) {
                 tracing::info!("Applying tweak: {} ({})", tweak.name, tweak.command);
 
-                // 使用 cmd /c 执行命令
-                let output = Command::new("cmd").args(["/c", &tweak.command]).output();
+                // 使用 cmd /c 执行命令 (隱藏窗口)
+                let output = Command::new("cmd")
+                    .args(["/c", &tweak.command])
+                    .creation_flags(CREATE_NO_WINDOW)
+                    .output();
 
                 match output {
                     Ok(out) if out.status.success() => {

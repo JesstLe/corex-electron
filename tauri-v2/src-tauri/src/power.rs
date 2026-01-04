@@ -4,6 +4,12 @@
 
 use crate::{AppError, AppResult};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 /// 已知电源计划 GUID
 const POWER_PLANS: &[(&str, &str)] = &[
     ("high_performance", "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"),
@@ -20,8 +26,9 @@ pub async fn get_current_power_plan() -> AppResult<serde_json::Value> {
     tokio::task::spawn_blocking(|| {
         let output = Command::new("powercfg")
             .args(["/getactivescheme"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map_err(|e| AppError::SystemError(e.to_string()))?;
+            .map_err(|e| AppError::SystemError(e.to_string()))?;;
 
         let stdout = crate::decode_output(&output.stdout);
 
@@ -72,8 +79,9 @@ pub async fn set_power_plan(plan: &str) -> AppResult<serde_json::Value> {
 
         let output = Command::new("powercfg")
             .args(["/setactive", &guid])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map_err(|e| AppError::SystemError(e.to_string()))?;
+            .map_err(|e| AppError::SystemError(e.to_string()))?;;
 
         if output.status.success() {
             tracing::info!("Power plan switched to: {}", plan);
@@ -103,8 +111,9 @@ pub async fn list_power_plans() -> AppResult<serde_json::Value> {
     tokio::task::spawn_blocking(|| {
         let output = Command::new("powercfg")
             .args(["/list"])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map_err(|e| AppError::SystemError(e.to_string()))?;
+            .map_err(|e| AppError::SystemError(e.to_string()))?;;
 
         let stdout = crate::decode_output(&output.stdout);
         let mut plans = Vec::new();
@@ -151,8 +160,9 @@ pub async fn import_power_plan(path: String) -> AppResult<serde_json::Value> {
     tokio::task::spawn_blocking(move || {
         let output = Command::new("powercfg")
             .args(["-import", &path])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map_err(|e| AppError::SystemError(e.to_string()))?;
+            .map_err(|e| AppError::SystemError(e.to_string()))?;;
 
         if output.status.success() {
             let stdout = crate::decode_output(&output.stdout);
@@ -240,8 +250,9 @@ pub async fn delete_power_plan(guid: String) -> AppResult<serde_json::Value> {
 
         let output = Command::new("powercfg")
             .args(["/delete", &guid])
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
-            .map_err(|e| AppError::SystemError(e.to_string()))?;
+            .map_err(|e| AppError::SystemError(e.to_string()))?;;
 
         if output.status.success() {
             tracing::info!("Power plan deleted: {}", guid);
