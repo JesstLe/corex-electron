@@ -1,6 +1,6 @@
 {
   "name": "task-nexus",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
