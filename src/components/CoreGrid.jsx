@@ -85,27 +85,25 @@ export default function CoreGrid({
         onClick={() => onToggleCore(coreIndex)}
         title={`Core ${coreIndex} - ${(load).toFixed(0)}% Util`}
         className={`relative w-10 h-10 rounded-lg text-xs font-medium transition-all flex items-center justify-center border overflow-hidden ${isSelected
-            ? 'bg-violet-500 text-white border-violet-600 shadow-md shadow-violet-200'
-            : 'text-slate-600 border-slate-200 hover:border-slate-300'
+          ? 'bg-violet-500 text-white border-violet-600 shadow-md shadow-violet-200'
+          : 'text-slate-600 border-slate-200 hover:border-slate-300'
           }`}
         style={!isSelected ? { backgroundColor: '#f8fafc' } : {}}
       >
-        {/* Heatmap Overlay (Only for unselected to keep selected clean, or subtle on selected) */}
-        {!isSelected && (
-          <div
-            className="absolute inset-0 transition-all duration-500"
-            style={{
-              backgroundColor: heatOverlayColor,
-              height: `${Math.max(10, load)}%`, // Vertical fill effect
-              bottom: 0,
-              top: 'auto'
-            }}
-          />
-        )}
+        {/* Heatmap Overlay - Different colors for selected vs unselected */}
+        <div
+          className="absolute inset-x-0 bottom-0 transition-all duration-500"
+          style={{
+            backgroundColor: isSelected
+              ? (load > 80 ? 'rgba(255, 255, 255, 0.35)' : load > 40 ? 'rgba(255, 255, 255, 0.25)' : load > 10 ? 'rgba(255, 255, 255, 0.15)' : 'transparent')
+              : heatOverlayColor,
+            height: `${Math.max(load > 0 ? 10 : 0, load)}%`,
+          }}
+        />
 
         <span className="relative z-10">{coreIndex}</span>
 
-        {/* Load Indicator (Small dot or bar) */}
+        {/* Load Indicator (Small number in corner) */}
         {cpuLoads.length > 0 && (
           <div className={`absolute bottom-0.5 right-0.5 text-[8px] leading-none ${isSelected ? 'text-white/80' : 'text-slate-400'}`}>
             {load > 0 ? Math.round(load) : ''}
