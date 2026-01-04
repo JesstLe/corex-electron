@@ -163,6 +163,33 @@ pub async fn set_priority(_pid: u32, _level: PriorityLevel) -> AppResult<()> {
     Err(AppError::SystemError("仅支持 Mindows".to_string()))
 }
 
+/// 结束进程
+#[cfg(windows)]
+pub async fn kill_process(pid: u32) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        unsafe {
+            let handle = OpenProcess(PROCESS_TERMINATE, false, pid)
+                .map_err(|e| AppError::ProcessNotFound(pid))?;
+            
+            if TerminateProcess(handle, 1).is_err() {
+                 let _ = CloseHandle(handle);
+                 return Err(AppError::SystemError("TerminateProcess failed".to_string()));
+            }
+            
+            let _ = CloseHandle(handle);
+            tracing::info!("Terminated PID {}", pid);
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| AppError::SystemError(e.to_string()))?
+}
+
+#[cfg(not(windows))]
+pub async fn kill_process(_pid: u32) -> AppResult<()> {
+    Err(AppError::SystemError("仅支持 Windows".to_string()))
+}
+
 /// 设置进程亲和性
 #[cfg(windows)]
 pub async fn set_affinity(

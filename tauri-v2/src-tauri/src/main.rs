@@ -66,6 +66,14 @@ async fn trim_process_memory(pid: u32) -> Result<u64, String> {
     governor::trim_memory(pid).await.map_err(|e: AppError| e.to_string())
 }
 
+/// 结束进程
+#[tauri::command]
+async fn terminate_process(pid: u32) -> Result<bool, String> {
+    governor::kill_process(pid).await
+        .map(|_| true)
+        .map_err(|e: AppError| e.to_string())
+}
+
 // ============================================================================
 // Tauri Commands - 内存管理
 // ============================================================================
@@ -243,6 +251,7 @@ pub fn run() {
             set_affinity,
             set_process_priority,
             trim_process_memory,
+            terminate_process,
             // 内存管理
             get_memory_info,
             clear_memory,

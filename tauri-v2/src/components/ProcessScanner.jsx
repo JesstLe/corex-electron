@@ -50,14 +50,24 @@ const MiniGraph = ({ data, color, height = 40, width = 100 }) => {
 // -- Context Menu Items --
 const ContextMenuItem = ({ label, icon: Icon, shortcut, subMenu, onClick, danger }) => {
   const [showSub, setShowSub] = useState(false);
-  const itemRef = useRef(null);
+  const timerRef = useRef(null);
+
+  const handleMouseEnter = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setShowSub(true);
+  };
+
+  const handleMouseLeave = () => {
+    timerRef.current = setTimeout(() => {
+      setShowSub(false);
+    }, 200); // 200ms grace period to cross the gap
+  };
 
   return (
     <div
-      ref={itemRef}
       className="relative"
-      onMouseEnter={() => setShowSub(true)}
-      onMouseLeave={() => setShowSub(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       <button
         onClick={onClick}
@@ -102,6 +112,7 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
       ref={menuRef}
       className="fixed z-[9999] w-56 bg-white/95 backdrop-blur-xl rounded-xl shadow-2xl border border-slate-200/60 p-1.5 animate-in fade-in zoom-in-95 duration-100"
       style={position}
+      onMouseLeave={onClose}
     >
       <div className="px-3 py-2 border-b border-slate-100 mb-1">
         <div className="font-bold text-xs text-slate-800 truncate">{process.name}</div>
@@ -142,6 +153,11 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
     </div>
   );
 };
+
+// Updated Grid Columns Definition to prevent shrinkage and cutting off
+// Form: [Selection] [Name] [User] [PID] [Pri] [Aff] [CPU] [Mem] [Path]
+// Use minmax for essential columns
+const GRID_COLS_CLASS = "grid grid-cols-[30px_minmax(180px,2fr)_minmax(80px,1fr)_60px_80px_100px_80px_80px_minmax(150px,2fr)]";
 
 export default function ProcessScanner({ selectedPid, onSelect, onScan, selectedPids, setSelectedPids }) {
   const [processes, setProcesses] = useState([]);
@@ -282,32 +298,33 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
 
   return (
     <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col h-[600px] overflow-hidden bg-white/50 backdrop-blur-md">
-      {/* Metrics Header */}
-      <div className="h-20 bg-white/60 border-b border-slate-200 grid grid-cols-4 gap-4 px-4 py-2">
-        {/* ... Same Graphs ... */}
-        <div className="flex flex-col justify-between">
+      {/* Metrics Header - Responsive Flex-Wrap */}
+      <div className="min-h-20 bg-white/60 border-b border-slate-200 flex flex-wrap items-center gap-4 px-4 py-2">
+        {/* ... Mini Graphs ... */}
+        <div className="flex flex-col justify-between min-w-[100px]">
           <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Processor Use</div>
           <div className="flex items-end gap-2">
             <span className="text-2xl font-mono font-bold text-slate-700">{history.cpu[history.cpu.length - 1]?.toFixed(0)}%</span>
             <MiniGraph data={history.cpu} color="#8b5cf6" width={80} height={24} />
           </div>
         </div>
-        <div className="flex flex-col justify-between">
+        <div className="flex flex-col justify-between min-w-[100px]">
           <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Memory Load</div>
           <div className="flex items-end gap-2">
             <span className="text-2xl font-mono font-bold text-slate-700">{history.memory[history.memory.length - 1]?.toFixed(0)}%</span>
             <MiniGraph data={history.memory} color="#06b6d4" width={80} height={24} />
           </div>
         </div>
-        <div className="flex flex-col justify-between">
+        <div className="flex flex-col justify-between min-w-[60px]">
           <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Processes</div>
           <span className="text-xl font-mono text-slate-600">
             {loading ? "..." : processes.length}
           </span>
         </div>
-        {/* Search & Control */}
-        <div className="flex items-center gap-2">
-          <div className="relative w-full">
+
+        {/* Search & Control - Auto expand or wrap */}
+        <div className="flex-1 flex items-center justify-end gap-2 min-w-[180px]">
+          <div className="relative w-full max-w-[300px]">
             <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
             <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search..." className="w-full pl-8 pr-2 py-1.5 bg-slate-100 rounded-lg text-xs outline-none focus:ring-1 focus:ring-violet-500" />
           </div>
@@ -321,72 +338,74 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
         </div>
       </div>
 
-      {/* Grid Header */}
-      <div className="grid grid-cols-[30px_2fr_1fr_60px_80px_100px_80px_80px_1fr] gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wide pr-2">
-        <div className="p-2 flex items-center justify-center cursor-pointer" onClick={() => setSelectedPids(new Set())}>
-          {selectedPids.size > 0 ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} />}
-        </div>
-        {['name', 'user', 'pid', 'priority', 'affinity', 'cpu', 'memory', 'path'].map(key => (
-          <div key={key} onClick={() => handleSort(key)} className="p-2 flex items-center cursor-pointer hover:bg-slate-200 transition-colors select-none">
-            {key} {sortConfig.key === key && (sortConfig.direction === 'desc' ? <ArrowDown size={10} className="ml-1" /> : <ArrowUp size={10} className="ml-1" />)}
+      {/* Grid Header - Scoped Scroller */}
+      <div className="flex-1 overflow-x-auto overflow-y-hidden bg-slate-50 relative flex flex-col">
+        <div className={`min-w-[800px] ${GRID_COLS_CLASS} gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wide pr-2`}>
+          <div className="p-2 flex items-center justify-center cursor-pointer" onClick={() => setSelectedPids(new Set())}>
+            {selectedPids.size > 0 ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} />}
           </div>
-        ))}
-      </div>
+          {['name', 'user', 'pid', 'priority', 'affinity', 'cpu', 'memory', 'path'].map(key => (
+            <div key={key} onClick={() => handleSort(key)} className="p-2 flex items-center cursor-pointer hover:bg-slate-200 transition-colors select-none">
+              {key} {sortConfig.key === key && (sortConfig.direction === 'desc' ? <ArrowDown size={10} className="ml-1" /> : <ArrowUp size={10} className="ml-1" />)}
+            </div>
+          ))}
+        </div>
 
-      {/* Virtual Table Body */}
-      <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-hidden font-mono text-xs relative">
-        <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', position: 'relative' }}>
-          {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-            const p = sortedProcesses[virtualRow.index];
-            const active = isSelected(p.pid);
-            return (
-              <div
-                key={p.pid}
-                data-index={virtualRow.index}
-                ref={rowVirtualizer.measureElement}
-                onContextMenu={(e) => handleContextMenu(e, p)}
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: '100%',
-                  height: `${virtualRow.size}px`,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-                className={`grid grid-cols-[30px_2fr_1fr_60px_80px_100px_80px_80px_1fr] gap-px items-center border-b border-slate-50 hover:bg-violet-50/60 transition-colors ${active ? 'bg-violet-100/50' : virtualRow.index % 2 === 0 ? 'bg-white/40' : 'bg-white/10'}`}
-              >
-                <div className="flex justify-center">
-                  <button onClick={() => toggleSelect(p.pid)}>
-                    {active ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} className="text-slate-300 hover:text-slate-500" />}
-                  </button>
+        {/* Virtual Table Body */}
+        <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-hidden font-mono text-xs relative">
+          <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', minWidth: '800px', position: 'relative' }}>
+            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+              const p = sortedProcesses[virtualRow.index];
+              const active = isSelected(p.pid);
+              return (
+                <div
+                  key={p.pid}
+                  data-index={virtualRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  onContextMenu={(e) => handleContextMenu(e, p)}
+                  style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: `${virtualRow.size}px`,
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                  className={`${GRID_COLS_CLASS} gap-px items-center border-b border-slate-50 hover:bg-violet-50/60 transition-colors ${active ? 'bg-violet-100/50' : virtualRow.index % 2 === 0 ? 'bg-white/40' : 'bg-white/10'}`}
+                >
+                  <div className="flex justify-center">
+                    <button onClick={() => toggleSelect(p.pid)}>
+                      {active ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} className="text-slate-300 hover:text-slate-500" />}
+                    </button>
+                  </div>
+
+                  <Cell className="font-semibold text-slate-700" onClick={() => toggleSelect(p.pid)}>
+                    <img src="https://img.icons8.com/color/48/console.png" className="w-4 h-4 mr-2 opacity-80" alt="" />
+                    {p.name}
+                  </Cell>
+
+                  <Cell className="text-slate-500">{p.user || 'System'}</Cell>
+                  <Cell className="text-slate-400">{p.pid}</Cell>
+
+                  <Cell>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${p.priority === 'High' || p.priority === 'RealTime' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                      {PRIORITY_MAP_CN[p.priority] || p.priority}
+                    </span>
+                  </Cell>
+
+                  <Cell className="text-slate-400 text-[10px] truncate" title={p.cpu_affinity}>{p.cpu_affinity}</Cell>
+
+                  <Cell className={`${p.cpu_usage > 10 ? 'text-red-500 font-bold' : 'text-slate-600'}`}>
+                    {p.cpu_usage?.toFixed(1)}%
+                  </Cell>
+
+                  <Cell className="text-slate-600">{formatBytes(p.memory_usage || 0)}</Cell>
+
+                  <Cell className="text-slate-400 truncate" title={p.path}>{p.path}</Cell>
                 </div>
-
-                <Cell className="font-semibold text-slate-700" onClick={() => toggleSelect(p.pid)}>
-                  <img src="https://img.icons8.com/color/48/console.png" className="w-4 h-4 mr-2 opacity-80" alt="" />
-                  {p.name}
-                </Cell>
-
-                <Cell className="text-slate-500">{p.user || 'System'}</Cell>
-                <Cell className="text-slate-400">{p.pid}</Cell>
-
-                <Cell>
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] ${p.priority === 'High' || p.priority === 'RealTime' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-                    {PRIORITY_MAP_CN[p.priority] || p.priority}
-                  </span>
-                </Cell>
-
-                <Cell className="text-slate-400 text-[10px] truncate" title={p.cpu_affinity}>{p.cpu_affinity}</Cell>
-
-                <Cell className={`${p.cpu_usage > 10 ? 'text-red-500 font-bold' : 'text-slate-600'}`}>
-                  {p.cpu_usage?.toFixed(1)}%
-                </Cell>
-
-                <Cell className="text-slate-600">{formatBytes(p.memory_usage || 0)}</Cell>
-
-                <Cell className="text-slate-400 truncate" title={p.path}>{p.path}</Cell>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 
