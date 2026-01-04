@@ -43,7 +43,8 @@ export default function Header({ cpuModel }) {
         </button>
         <button
           onClick={handleClose}
-          className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all flex items-center justify-center"
+          className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all inline-flex items-center justify-center"
+          style={{ lineHeight: 0 }}
         >
           <X size={14} />
         </button>
