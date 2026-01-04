@@ -80,6 +80,11 @@ export default function SmartAffinitySelector({ topology = [], currentAffinity =
                                     <button onClick={() => setAffinityMode('soft')} className={`px-2 py-0.5 text-[10px] rounded-md ${affinityMode === 'soft' ? 'bg-white text-blue-600' : 'text-slate-400'}`}>柔性 (Sets)</button>
                                 </div>
                             </div>
+                            <p className="text-[11px] text-slate-400 mt-1 max-w-[300px] leading-relaxed">
+                                {affinityMode === 'hard'
+                                    ? "强制绑定 (Affinity Mask): 严格限制进程在选定核心运行，适用于独占场景。"
+                                    : "柔性绑定 (CPU Sets): 优选选定核心，调度器更灵活，减少潜在的微卡顿风险。"}
+                            </p>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 text-slate-400 hover:text-red-500"><X size={20} /></button>

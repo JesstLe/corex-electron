@@ -207,7 +207,7 @@ const ThreadBindingSelector = ({ process, onBind }: { process: ProcessInfo, onBi
     );
 };
 
-const GRID_COLS_CLASS = "grid grid-cols-[30px_minmax(180px,2fr)_minmax(80px,1fr)_60px_80px_100px_80px_80px_minmax(250px,3fr)]";
+const GRID_COLS_CLASS = "grid grid-cols-[3.5%_22%_10%_8%_8%_7%_8%_8%_25.5%]";
 
 interface ProcessScannerProps {
     processes: ProcessInfo[];
@@ -293,8 +293,19 @@ export default function ProcessScanner({
         return [...filtered].sort((a, b) => {
             let aVal = a[sortConfig.key] ?? 0;
             let bVal = b[sortConfig.key] ?? 0;
+
+            // Special sorting for keys that are display-mapped or complex
             if (sortConfig.key === 'cpu') { aVal = a.cpu_usage || 0; bVal = b.cpu_usage || 0; }
             if (sortConfig.key === 'memory') { aVal = a.memory_usage || 0; bVal = b.memory_usage || 0; }
+            if (sortConfig.key === 'priority') {
+                const priorityOrder: Record<string, number> = { 'RealTime': 6, 'High': 5, 'AboveNormal': 4, 'Normal': 3, 'BelowNormal': 2, 'Idle': 1 };
+                aVal = priorityOrder[a.priority] || 0;
+                bVal = priorityOrder[b.priority] || 0;
+            }
+
+            if (typeof aVal === 'string' && typeof bVal === 'string') {
+                return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            }
             if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
             if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
             return 0;
@@ -367,7 +378,7 @@ export default function ProcessScanner({
     };
 
     return (
-        <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col flex-1 min-h-[300px] max-h-[600px] overflow-hidden bg-white/50 backdrop-blur-md">
+        <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col flex-1 min-h-[400px] overflow-hidden bg-white/50 backdrop-blur-md">
             <div className="min-h-20 bg-white/60 border-b border-slate-200 flex flex-wrap items-center gap-4 px-4 py-2">
                 <div className="flex flex-col min-w-[100px]">
                     <div className="text-[10px] uppercase font-bold text-slate-400">处理器占用</div>
@@ -398,12 +409,54 @@ export default function ProcessScanner({
                 <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-xs text-slate-700">
                     <div style={{ minWidth: '1100px' }}>
                         <div className={`${GRID_COLS_CLASS} gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase pr-2 sticky top-0 z-10`}>
-                            <div className="p-2 flex items-center justify-center cursor-pointer" onClick={() => { setSelectedPids(new Set()); onSelect(null); }}>
-                                {selectedPids.size > 0 ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} />}
+                            <div
+                                className="p-2 flex items-center justify-center cursor-pointer hover:bg-slate-200 transition-colors"
+                                onClick={() => {
+                                    const visiblePids = treeViewMode ? processTreeData.map(p => p.pid) : sortedProcesses.map(p => p.pid);
+                                    if (selectedPids.size >= visiblePids.length && visiblePids.length > 0) {
+                                        setSelectedPids(new Set());
+                                        onSelect(null);
+                                    } else {
+                                        setSelectedPids(new Set(visiblePids));
+                                        if (visiblePids.length === 1) onSelect(visiblePids[0]);
+                                    }
+                                }}
+                            >
+                                {selectedPids.size > 0 && selectedPids.size >= (treeViewMode ? processTreeData.length : sortedProcesses.length)
+                                    ? <CheckSquare size={12} className="text-violet-600" />
+                                    : selectedPids.size > 0
+                                        ? <div className="w-3 h-3 bg-violet-400 rounded-sm flex items-center justify-center"><div className="w-2 h-0.5 bg-white" /></div>
+                                        : <Square size={12} />}
                             </div>
-                            {['名称', '用户', 'PID', '优先级', '亲和性', 'CPU', '内存', '路径'].map(label => (
-                                <div key={label} className="p-2 flex items-center cursor-pointer hover:bg-slate-200">{label}</div>
-                            ))}
+                            {[
+                                { label: '名称', key: 'name' },
+                                { label: '用户', key: 'user' },
+                                { label: 'PID', key: 'pid' },
+                                { label: '优先级', key: 'priority' },
+                                { label: '亲和性', key: 'cpu_affinity' },
+                                { label: 'CPU', key: 'cpu' },
+                                { label: '内存', key: 'memory' },
+                                { label: '路径', key: 'path' }
+                            ].map(col => {
+                                const isSorted = sortConfig.key === col.key;
+                                return (
+                                    <div
+                                        key={col.key}
+                                        className={`p-2 flex items-center gap-1 cursor-pointer hover:bg-slate-200 transition-colors group ${isSorted ? 'text-violet-600 bg-violet-50/50' : ''}`}
+                                        onClick={() => setSortConfig(prev => ({
+                                            key: col.key,
+                                            direction: prev.key === col.key && prev.direction === 'desc' ? 'asc' : 'desc'
+                                        }))}
+                                    >
+                                        {col.label}
+                                        {isSorted ? (
+                                            sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />
+                                        ) : (
+                                            <ArrowUp size={10} className="opacity-0 group-hover:opacity-30" />
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
 
                         <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
