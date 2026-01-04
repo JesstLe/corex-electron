@@ -66,9 +66,8 @@ const SimpleContextMenu = ({ x, y, process, onClose, onAction }) => {
   );
 };
 
-export default function ProcessScanner({ processes, selectedPid, onSelect, onScan, scanning }) {
+export default function ProcessScanner({ processes, selectedPid, onSelect, onScan, scanning, selectedPids, setSelectedPids }) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedPids, setSelectedPids] = useState(new Set());
   const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, process: null });
 
   // 过滤进程

@@ -25,6 +25,7 @@ function App() {
   const [settings, setSettings] = useState({});
   const [priority, setPriority] = useState('Normal');
   const [toasts, setToasts] = useState([]);
+  const [selectedPids, setSelectedPids] = useState(new Set());
 
   const showToast = (message, type = 'success', duration = 3000) => {
     const id = Date.now() + Math.random();
@@ -424,6 +425,8 @@ function App() {
                 onSelect={setSelectedPid}
                 onScan={handleScan}
                 scanning={scanning}
+                selectedPids={selectedPids}
+                setSelectedPids={setSelectedPids}
               />
 
               <CoreGrid
