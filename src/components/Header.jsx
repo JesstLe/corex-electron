@@ -28,7 +28,7 @@ export default function Header({ cpuModel }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-1 no-drag">
+      <div className="flex items-center gap-1 no-drag relative z-50">
         <button
           onClick={handleMinimize}
           className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all flex items-center justify-center"
