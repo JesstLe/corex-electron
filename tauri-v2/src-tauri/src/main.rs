@@ -6,7 +6,10 @@
 
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use task_nexus_lib::{config, governor, hardware, power, tweaks, AppError};
+use task_nexus_lib::{config, governor, hardware, power, tweaks, thread, AppError};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 
 // ============================================================================
 // Tauri Commands - CPU 信息
@@ -95,6 +98,30 @@ async fn open_file_location(path: String) -> Result<bool, String> {
     {
         Err("仅支持 Windows 平台".to_string())
     }
+}
+
+// ============================================================================
+// Tauri Commands - 线程管理
+// ============================================================================
+
+/// 获取进程的所有线程
+#[tauri::command]
+async fn get_process_threads(pid: u32) -> Result<Vec<thread::ThreadInfo>, String> {
+    thread::get_process_threads(pid).map_err(|e: AppError| e.to_string())
+}
+
+/// 设置线程亲和性
+#[tauri::command]
+async fn set_thread_affinity(tid: u32, core_mask: u64) -> Result<bool, String> {
+    thread::set_thread_affinity(tid, core_mask)
+        .map(|_| true)
+        .map_err(|e: AppError| e.to_string())
+}
+
+/// 自动绑定最重线程到指定核心
+#[tauri::command]
+async fn bind_heaviest_thread(pid: u32, target_core: u32) -> Result<u32, String> {
+    thread::bind_heaviest_thread(pid, target_core).map_err(|e: AppError| e.to_string())
 }
 
 // ============================================================================
@@ -276,6 +303,10 @@ pub fn run() {
             trim_process_memory,
             terminate_process,
             open_file_location,
+            // 线程管理
+            get_process_threads,
+            set_thread_affinity,
+            bind_heaviest_thread,
             // 内存管理
             get_memory_info,
             clear_memory,

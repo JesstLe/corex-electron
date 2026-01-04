@@ -152,8 +152,18 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
             />
           }
         />
+        <ContextMenuItem
+          label="线程绑定 (帧线程优化)"
+          icon={Zap}
+          subMenu={
+            <ThreadBindingSelector
+              process={process}
+              onBind={(targetCore) => { onAction('bind_heaviest_thread', { pid: process.pid, targetCore }); onClose(); }}
+            />
+          }
+        />
         <div className="my-1 border-t border-slate-100"></div>
-        <ContextMenuItem label="结束进程 (Terminate)" icon={XCircle} danger onClick={() => { onAction('terminate_process', { pid: process.pid }); onClose(); }} />
+        <ContextMenuItem label="结束进程" icon={XCircle} danger onClick={() => { onAction('terminate_process', { pid: process.pid }); onClose(); }} />
       </div>
     </div>
   );
@@ -192,10 +202,10 @@ const AffinitySelector = ({ process, onApply }) => {
   return (
     <div className="p-2 w-64">
       <div className="flex justify-between items-center mb-2">
-        <span className="text-xs font-bold text-slate-500">CPU Cores ({coreCount})</span>
+        <span className="text-xs font-bold text-slate-500">CPU 核心 ({coreCount})</span>
         <div className="flex gap-1">
-          <button onClick={() => setSelectedMask((BigInt(1) << BigInt(coreCount)) - BigInt(1))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">All</button>
-          <button onClick={() => setSelectedMask(BigInt(0))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">Clear</button>
+          <button onClick={() => setSelectedMask((BigInt(1) << BigInt(coreCount)) - BigInt(1))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">全选</button>
+          <button onClick={() => setSelectedMask(BigInt(0))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">清除</button>
         </div>
       </div>
       <div className="grid grid-cols-4 gap-1 mb-2 max-h-48 overflow-y-auto">
@@ -213,7 +223,39 @@ const AffinitySelector = ({ process, onApply }) => {
         onClick={() => onApply(selectedMask.toString())}
         className="w-full py-1 bg-violet-600 text-white text-xs rounded hover:bg-violet-700 transition-colors shadow-sm"
       >
-        Apply Affinity
+        应用亲和性
+      </button>
+    </div>
+  );
+};
+
+// -- Thread Binding Selector (帧线程优化) --
+const ThreadBindingSelector = ({ process, onBind }) => {
+  const coreCount = navigator.hardwareConcurrency || 16;
+  const [selectedCore, setSelectedCore] = useState(0);
+
+  return (
+    <div className="p-2 w-64">
+      <div className="text-xs font-bold text-slate-500 mb-2">选择目标核心 (绑定帧线程)</div>
+      <div className="text-[10px] text-slate-400 mb-2">
+        自动检测 CPU 占用最高的线程并绑定到指定核心，避免缓存失效
+      </div>
+      <div className="grid grid-cols-4 gap-1 mb-2 max-h-32 overflow-y-auto">
+        {Array.from({ length: coreCount }).map((_, i) => (
+          <button
+            key={i}
+            onClick={(e) => { e.stopPropagation(); setSelectedCore(i); }}
+            className={`h-8 rounded text-[10px] font-mono transition-colors ${selectedCore === i ? 'bg-green-500 text-white shadow-sm' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+          >
+            {i}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => onBind(selectedCore)}
+        className="w-full py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors shadow-sm"
+      >
+        绑定帧线程 → Core {selectedCore}
       </button>
     </div>
   );
@@ -248,28 +290,29 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
 
   // Initial Fetch & Event Listener
   useEffect(() => {
-    let unlisten;
+    let unlisten = null;
+    let mounted = true;
 
     // 1. Fetch immediately to show something
     invoke('get_processes').then(data => {
-      if (!pausedRef.current && data) {
+      if (mounted && !pausedRef.current && data) {
         setProcesses(data);
         setLoading(false);
       }
-    }).catch(e => console.error("Initial fetch failed:", e));
+    }).catch(e => console.error("初始获取进程失败:", e));
 
-    // 2. Setup Listener for updates
-    async function setupListener() {
+    // 2. Setup Listener for real-time updates (1s from backend)
+    (async () => {
       unlisten = await listen('process-update', (event) => {
-        if (!pausedRef.current) {
+        if (mounted && !pausedRef.current) {
           setProcesses(event.payload);
           setLoading(false);
         }
       });
-    }
-    setupListener();
+    })();
 
     return () => {
+      mounted = false;
       if (unlisten) unlisten();
     };
   }, []);
@@ -396,6 +439,16 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
     try {
       await invoke(command, args);
       console.log(`Executed ${command}`, args);
+
+      // If process was terminated, remove it from the local list immediately
+      if (command === 'terminate_process') {
+        setProcesses(prev => prev.filter(p => p.pid !== args.pid));
+        setSelectedPids(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(args.pid);
+          return newSet;
+        });
+      }
     } catch (e) {
       console.error(`Failed to execute ${command}:`, e);
     }

@@ -7,6 +7,7 @@ pub mod power;
 pub mod tweaks;
 pub mod monitor;
 pub mod watchdog;
+pub mod thread;
 
 use serde::{Deserialize, Serialize};
 
