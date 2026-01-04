@@ -24,17 +24,38 @@ export interface TopologyCore {
 interface SmartAffinitySelectorProps {
     topology: TopologyCore[];
     currentAffinity?: string;
+    initialCpuSets?: number[];
     onApply: (mask: string, mode: 'hard' | 'soft', coreIds: number[]) => void;
     onClose: () => void;
 }
 
-export default function SmartAffinitySelector({ topology = [], currentAffinity = "All", onApply, onClose }: SmartAffinitySelectorProps) {
+export default function SmartAffinitySelector({
+    topology = [],
+    currentAffinity = "All",
+    initialCpuSets,
+    onApply,
+    onClose
+}: SmartAffinitySelectorProps) {
     const [hexMask, setHexMask] = useState("");
     const [loading, setLoading] = useState(false);
-    const [affinityMode, setAffinityMode] = useState<'hard' | 'soft'>('hard');
+
+    // If initialCpuSets is provided and not empty (or we explicitly want to show it if it was fetched), switch to soft
+    const [affinityMode, setAffinityMode] = useState<'hard' | 'soft'>(
+        (initialCpuSets && initialCpuSets.length > 0) ? 'soft' : 'hard'
+    );
+
     const coreCount = topology.length || navigator.hardwareConcurrency || 16;
 
     const [selectedMask, setSelectedMask] = useState<bigint>(() => {
+        // If we are in soft mode (based on initialCpuSets), build mask from sets
+        if (initialCpuSets && initialCpuSets.length > 0) {
+            let mask = 0n;
+            initialCpuSets.forEach(id => {
+                mask |= (1n << BigInt(id));
+            });
+            return mask;
+        }
+
         try {
             if (!currentAffinity || currentAffinity === 'All') return (1n << BigInt(coreCount)) - 1n;
             return BigInt(currentAffinity.startsWith('0x') ? currentAffinity : '0x' + currentAffinity);

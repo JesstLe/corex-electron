@@ -7,7 +7,7 @@
 use task_nexus_lib::{
     config, governor, hardware, hardware_topology, power, thread, tweaks, AppError,
 };
-use tauri::Manager;
+use tauri::AppHandle;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(windows)]
@@ -142,6 +142,11 @@ fn get_process_threads(pid: u32) -> Result<Vec<thread::ThreadInfo>, String> {
 #[tauri::command]
 fn set_process_cpu_sets(pid: u32, core_ids: Vec<u32>) -> Result<(), String> {
     task_nexus_lib::cpu_sets::set_process_cpu_sets(pid, core_ids)
+}
+
+#[tauri::command]
+fn get_process_cpu_sets(pid: u32) -> Result<Vec<u32>, String> {
+    task_nexus_lib::cpu_sets::get_process_cpu_sets(pid)
 }
 
 /// 设置线程亲和性
@@ -419,6 +424,7 @@ pub fn run() {
             set_affinity,
             set_process_affinity,
             set_process_cpu_sets,
+            get_process_cpu_sets,
             set_process_priority,
             trim_process_memory,
             terminate_process,

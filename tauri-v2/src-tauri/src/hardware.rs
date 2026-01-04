@@ -8,7 +8,7 @@ use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(windows)]
-use windows::Win32::System::SystemInformation::*;
+// use windows::Win32::System::SystemInformation::*;
 
 /// CPU 监控运行状态
 static CPU_MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -252,7 +252,7 @@ pub async fn get_memory_info() -> AppResult<MemoryInfo> {
 
 /// 启动 CPU 核心监控
 pub async fn start_cpu_monitor(app: tauri::AppHandle) {
-    use tauri::{Emitter, Runtime}; // Added Emitter and Runtime here
+    use tauri::Emitter; // Removed Runtime
     if CPU_MONITOR_RUNNING.swap(true, Ordering::SeqCst) {
         return; // 已经在运行
     }

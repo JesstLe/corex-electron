@@ -12,6 +12,7 @@ pub mod tweaks;
 pub mod watchdog;
 
 use serde::{Deserialize, Serialize};
+// use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 解码系统命令输出 (GBK -> UTF-8)
 pub fn decode_output(bytes: &[u8]) -> String {

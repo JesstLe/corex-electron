@@ -68,11 +68,37 @@ interface ContextMenuItemProps {
 
 const ContextMenuItem = ({ label, icon: Icon, shortcut, subMenu, onClick, danger }: ContextMenuItemProps) => {
     const [showSub, setShowSub] = useState(false);
+    const [subPos, setSubPos] = useState({ top: 0, left: '100%' });
     const timerRef = useRef<any>(null);
+    const subRef = useRef<HTMLDivElement>(null);
 
-    const handleMouseEnter = () => {
+    const handleMouseEnter = (e: React.MouseEvent) => {
         if (timerRef.current) clearTimeout(timerRef.current);
         setShowSub(true);
+
+        // Calculate sub-menu position after it's rendered
+        setTimeout(() => {
+            if (subRef.current) {
+                const rect = subRef.current.getBoundingClientRect();
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+
+                let left = '100%';
+                let top = 0;
+
+                // Check right boundary
+                if (rect.right > viewportWidth) {
+                    left = '-100%'; // Flip to left
+                }
+
+                // Check bottom boundary
+                if (rect.bottom > viewportHeight) {
+                    top = viewportHeight - rect.bottom - 10; // Shift up
+                }
+
+                setSubPos({ top, left });
+            }
+        }, 0);
     };
 
     const handleMouseLeave = () => {
@@ -96,7 +122,11 @@ const ContextMenuItem = ({ label, icon: Icon, shortcut, subMenu, onClick, danger
             </button>
 
             {subMenu && showSub && (
-                <div className="absolute left-full top-0 ml-1 min-w-[10rem] w-max bg-white/95 backdrop-blur-xl rounded-lg shadow-xl border border-slate-200/60 p-1 z-50 animate-in fade-in slide-in-from-left-2 duration-100">
+                <div
+                    ref={subRef}
+                    className="absolute min-w-[10rem] w-max bg-white/95 backdrop-blur-xl rounded-lg shadow-xl border border-slate-200/60 p-1 z-50 animate-in fade-in slide-in-from-left-2 duration-100"
+                    style={{ left: subPos.left, top: subPos.top, marginLeft: subPos.left === '100%' ? '4px' : '-4px' }}
+                >
                     {subMenu}
                 </div>
             )}
@@ -405,11 +435,55 @@ export default function ProcessScanner({
 
     const menuAction = async (command: string, args: any) => {
         if (command === 'open_affinity_modal') {
-            setAffinityModal({ visible: true, process: args.process });
+            const process = args.process;
+            try {
+                // Fetch latest state from backend to ensure we have the correctly initialized values
+                // We need topology to know how many cores exist
+                const topology = await invoke<TopologyCore[]>('get_cpu_topology');
+                const coreCount = topology.length;
+
+                // Fetch current CPU Sets
+                const cpuSets = await invoke<number[]>('get_process_cpu_sets', { pid: process.pid });
+
+                // If there are CPU Sets, we should probably tell the modal to start in "Soft" mode
+                // and use those sets. For now, let's just make sure the process object has the latest.
+                // We can synthesize a custom affinity string for the modal if needed, 
+                // but the modal needs an update too to handle initial state better.
+
+                setAffinityModal({
+                    visible: true,
+                    process: {
+                        ...process,
+                        initialCpuSets: cpuSets
+                    }
+                });
+            } catch (e) {
+                console.error("Failed to fetch process affinity state:", e);
+                // Fallback to what we have
+                setAffinityModal({ visible: true, process });
+            }
             return;
         }
         try {
             const res = await invoke<any>(command, args);
+
+            // Auto-Save Priority if that was the command
+            if (command === 'set_process_priority') {
+                const process = args.process || processes.find(p => p.pid === args.pid);
+                if (process) {
+                    const profile = {
+                        name: process.name,
+                        affinity: process.cpu_affinity?.startsWith('0x') ? process.cpu_affinity.slice(2) : "FFFFFFFFFFFFFFFF", // Fallback to all if not hex
+                        mode: process.cpu_affinity?.startsWith('Sets') ? 'soft' : 'hard',
+                        priority: args.priority,
+                        primary_core: null,
+                        enabled: true,
+                        timestamp: Date.now()
+                    };
+                    await invoke('add_profile', { profile }).catch(e => console.error("Auto-save priority failed:", e));
+                }
+            }
+
             if (command === 'terminate_process') {
                 setProcesses(prev => prev.filter(p => p.pid !== args.pid));
                 const nextSet = new Set(selectedPids);
@@ -434,6 +508,18 @@ export default function ProcessScanner({
                 await invoke('set_process_affinity', { pid: affinityModal.process.pid, affinityMask: maskString });
             }
 
+            // Auto-Save Profile
+            const profile = {
+                name: affinityModal.process.name,
+                affinity: mode === 'soft' ? maskString : maskString, // Both use maskString as the raw value representation
+                mode: mode,
+                priority: affinityModal.process.priority || 'Normal',
+                primary_core: null, // Default
+                enabled: true,
+                timestamp: Date.now()
+            };
+            await invoke('add_profile', { profile }).catch(e => console.error("Auto-save affinity failed:", e));
+
             // Immediate local feedback: update the process in the list if possible
             const updatedAffinity = mode === 'soft' ? `Sets: ${coreIds.length}` : `0x${maskString}`;
             setProcesses(prev => prev.map(p =>
@@ -442,11 +528,11 @@ export default function ProcessScanner({
                     : p
             ));
 
-            showToast('亲和性设置已成功应用', 'success');
+            showToast(`设置已应用${mode === 'soft' ? ' (柔性Sets)' : ''}并自动保存`, 'success');
             setAffinityModal({ visible: false, process: null });
 
-            // Trigger a re-scan to sync with backend truth
-            setTimeout(() => onScan(), 500);
+            // Re-scan to sync with backend
+            setTimeout(onScan, 500);
         } catch (e) {
             console.error('Affinity Apply Error:', e);
             showToast(`设置失败: ${e}`, 'error');
@@ -590,7 +676,13 @@ export default function ProcessScanner({
             </div>
 
             {affinityModal.visible && (
-                <SmartAffinitySelector topology={topology} currentAffinity={affinityModal.process?.cpu_affinity || 'All'} onApply={handleAffinityApply} onClose={() => setAffinityModal({ visible: false, process: null })} />
+                <SmartAffinitySelector
+                    topology={topology}
+                    currentAffinity={affinityModal.process?.cpu_affinity || 'All'}
+                    initialCpuSets={affinityModal.process?.initialCpuSets}
+                    onApply={handleAffinityApply}
+                    onClose={() => setAffinityModal({ visible: false, process: null })}
+                />
             )}
         </div>
     );

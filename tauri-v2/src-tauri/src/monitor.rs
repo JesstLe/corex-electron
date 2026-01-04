@@ -1,4 +1,4 @@
-use crate::{AppResult, ProcessInfo};
+use crate::ProcessInfo;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashMap;
@@ -7,12 +7,12 @@ use std::sync::{
     Arc,
 };
 use std::time::Duration;
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 #[cfg(windows)]
 use windows::Win32::Foundation::*;
 #[cfg(windows)]
-use windows::Win32::System::ProcessStatus::*;
+// use windows::Win32::System::ProcessStatus::*;
 #[cfg(windows)]
 use windows::Win32::System::Threading::*; // For GetProcessMemoryInfo if needed, or stick to sysinfo for basic mem
 
@@ -107,8 +107,11 @@ impl ProcessMonitor {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
-                // ProBalance Watchdog Check
-                tauri::async_runtime::block_on(crate::watchdog::check_and_restrain(&processes));
+                // ProBalance Watchdog & Profile Enforcement Check
+                tauri::async_runtime::block_on(async {
+                    crate::watchdog::enforce_profiles(&processes).await;
+                    crate::watchdog::check_and_restrain(&processes).await;
+                });
 
                 // Emit event
                 if let Err(e) = app_handle.emit("process-update", &processes) {

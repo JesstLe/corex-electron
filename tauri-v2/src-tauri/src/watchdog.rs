@@ -2,7 +2,7 @@ use crate::{config, governor, PriorityLevel, ProcessInfo};
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
 use std::collections::HashSet;
-use std::sync::atomic::{AtomicBool, Ordering};
+// use std::sync::atomic::{AtomicBool, Ordering};
 
 // Track which processes we have restrained so we can restore them
 static RESTRAINED_PIDS: Lazy<RwLock<HashSet<u32>>> = Lazy::new(|| RwLock::new(HashSet::new()));
@@ -10,6 +10,75 @@ static RESTRAINED_PIDS: Lazy<RwLock<HashSet<u32>>> = Lazy::new(|| RwLock::new(Ha
 // Debounce/Cool-down logic (prevent rapid toggling)
 static LAST_ACTION_TIME: Lazy<RwLock<std::time::Instant>> =
     Lazy::new(|| RwLock::new(std::time::Instant::now()));
+
+pub async fn enforce_profiles(processes: &[ProcessInfo]) {
+    let profiles = config::get_profiles().await.unwrap_or_default();
+    if profiles.is_empty() {
+        return;
+    }
+
+    for p in processes {
+        let name_lower = p.name.to_lowercase();
+        // Find a matching profile (case-insensitive)
+        if let Some(profile) = profiles.iter().find(|pr| pr.name.to_lowercase() == name_lower && pr.enabled) {
+            
+            // 1. Check Priority
+            if p.priority != profile.priority {
+                if let Some(level) = PriorityLevel::from_str(&profile.priority) {
+                    tracing::info!("Auto-Apply: Adjusting priority for {} (PID {}) to {}", p.name, p.pid, profile.priority);
+                    let _ = governor::set_priority(p.pid, level).await;
+                }
+            }
+
+            // 2. Check Affinity/Sets
+            // This is harder to check perfectly because p.cpu_affinity is a formatted string.
+            // But if it's different enough, we re-apply.
+            // For now, let's look at the mode.
+            let is_soft = profile.mode == "soft";
+
+            // If profile is soft but current is not reported as "Sets: ..." 
+            // OR if profile is hard but current doesn't match hex
+            let needs_affinity_fix = if is_soft {
+                !p.cpu_affinity.starts_with("Sets")
+            } else {
+                // Hard affinity
+                let target_val = u64::from_str_radix(&profile.affinity, 16).unwrap_or(0);
+                let target_hex = format!("{:#x}", target_val);
+                p.cpu_affinity != target_hex && p.cpu_affinity != "All"
+            };
+
+            if needs_affinity_fix {
+                tracing::info!("Auto-Apply: Re-applying affinity for {} (PID {}) [Mode: {}]", p.name, p.pid, profile.mode);
+                if is_soft {
+                    // Convert affinity string (core indices) back to Vec<u32>
+                    // Note: In my Auto-Save implementation, I saved maskString to affinity.
+                    // We need to be consistent. 
+                    // Actually, let's check how handleAffinityApply saved it.
+                    // It saved maskString.
+                    
+                    // For Sets, it's better to store core_ids. 
+                    // But our struct has a single `affinity: String`.
+                    // Let's assume for 'soft' mode, we might need a parser.
+                    
+                    // Actually, I'll just use the set_process_affinity for both if I can, 
+                    // but Sets needs the cpu_sets module.
+                    
+                    if let Ok(mask) = u64::from_str_radix(&profile.affinity, 16) {
+                        let mut core_ids = Vec::new();
+                        for i in 0..64 {
+                            if (mask & (1 << i)) != 0 {
+                                core_ids.push(i as u32);
+                            }
+                        }
+                        let _ = crate::cpu_sets::set_process_cpu_sets(p.pid, core_ids);
+                    }
+                } else {
+                    let _ = governor::set_process_affinity(p.pid, profile.affinity.clone()).await;
+                }
+            }
+        }
+    }
+}
 
 pub async fn check_and_restrain(processes: &[ProcessInfo]) {
     // 1. Get Config
