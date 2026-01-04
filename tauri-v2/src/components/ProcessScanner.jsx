@@ -424,21 +424,21 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
       <div className="min-h-20 bg-white/60 border-b border-slate-200 flex flex-wrap items-center gap-4 px-4 py-2">
         {/* ... Mini Graphs ... */}
         <div className="flex flex-col justify-between min-w-[100px]">
-          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Processor Use</div>
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">处理器占用</div>
           <div className="flex items-end gap-2">
             <span className="text-2xl font-mono font-bold text-slate-700">{history.cpu[history.cpu.length - 1]?.toFixed(0)}%</span>
             <MiniGraph data={history.cpu} color="#8b5cf6" width={80} height={24} />
           </div>
         </div>
         <div className="flex flex-col justify-between min-w-[100px]">
-          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Memory Load</div>
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">内存负载</div>
           <div className="flex items-end gap-2">
             <span className="text-2xl font-mono font-bold text-slate-700">{history.memory[history.memory.length - 1]?.toFixed(0)}%</span>
             <MiniGraph data={history.memory} color="#06b6d4" width={80} height={24} />
           </div>
         </div>
         <div className="flex flex-col justify-between min-w-[60px]">
-          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Processes</div>
+          <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">进程数</div>
           <span className="text-xl font-mono text-slate-600">
             {loading ? "..." : processes.length}
           </span>
@@ -482,103 +482,133 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
         </div>
       </div>
 
-      {/* Grid Header - Scoped Scroller */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden bg-slate-50 relative flex flex-col">
-        <div className={`min-w-[800px] ${GRID_COLS_CLASS} gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wide pr-2`}>
-          <div className="p-2 flex items-center justify-center cursor-pointer" onClick={() => setSelectedPids(new Set())}>
-            {selectedPids.size > 0 ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} />}
-          </div>
-          {['name', 'user', 'pid', 'priority', 'affinity', 'cpu', 'memory', 'path'].map(key => (
-            <div key={key} onClick={() => handleSort(key)} className="p-2 flex items-center cursor-pointer hover:bg-slate-200 transition-colors select-none">
-              {key} {sortConfig.key === key && (sortConfig.direction === 'desc' ? <ArrowDown size={10} className="ml-1" /> : <ArrowUp size={10} className="ml-1" />)}
-            </div>
-          ))}
-        </div>
-
-        {/* Virtual Table Body */}
-        <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-xs relative">
-          <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', minWidth: '800px', position: 'relative' }}>
-            {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const p = processTreeData[virtualRow.index];
-              const active = isSelected(p.pid);
-              return (
-                <div
-                  key={p.pid}
-                  data-index={virtualRow.index}
-                  ref={rowVirtualizer.measureElement}
-                  onContextMenu={(e) => handleContextMenu(e, p)}
-                  style={{
-                    position: 'absolute',
-                    top: 0,
-                    left: 0,
-                    width: '100%',
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                  className={`${GRID_COLS_CLASS} gap-px items-center border-b border-slate-50 hover:bg-violet-50/60 transition-colors ${active ? 'bg-violet-100/50' : virtualRow.index % 2 === 0 ? 'bg-white/40' : 'bg-white/10'}`}
-                >
-                  <div className="flex justify-center">
-                    <button onClick={() => toggleSelect(p.pid)}>
-                      {active ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} className="text-slate-300 hover:text-slate-500" />}
-                    </button>
-                  </div>
-
-                  <Cell className="font-semibold text-slate-700" onClick={() => toggleSelect(p.pid)}>
-                    {/* Tree Indentation */}
-                    {treeViewMode && p.depth > 0 && (
-                      <span style={{ width: p.depth * 16 }} className="inline-block" />
-                    )}
-                    {/* Expand/Collapse Icon */}
-                    {treeViewMode && p.hasChildren && (
-                      <button
-                        onClick={(e) => { e.stopPropagation(); toggleExpand(p.pid); }}
-                        className="mr-1 text-slate-400 hover:text-slate-600"
-                      >
-                        {p.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                      </button>
-                    )}
-                    {treeViewMode && !p.hasChildren && p.depth > 0 && (
-                      <span className="w-3 inline-block" />
-                    )}
-                    <img src="https://img.icons8.com/color/48/console.png" className="w-4 h-4 mr-2 opacity-80 inline-block" alt="" />
-                    {p.name}
-                  </Cell>
-
-                  <Cell className="text-slate-500">{p.user || 'System'}</Cell>
-                  <Cell className="text-slate-400">{p.pid}</Cell>
-
-                  <Cell>
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] ${p.priority === 'High' || p.priority === 'RealTime' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-                      {PRIORITY_MAP_CN[p.priority] || p.priority}
-                    </span>
-                  </Cell>
-
-                  <Cell className="text-slate-400 text-[10px] truncate" title={p.cpu_affinity}>{p.cpu_affinity}</Cell>
-
-                  <Cell className={`${p.cpu_usage > 10 ? 'text-red-500 font-bold' : 'text-slate-600'}`}>
-                    {p.cpu_usage?.toFixed(1)}%
-                  </Cell>
-
-                  <Cell className="text-slate-600">{formatBytes(p.memory_usage || 0)}</Cell>
-
-                  <Cell className="text-slate-400 truncate" title={p.path}>{p.path}</Cell>
+      {/* Grid Container - Single Scroll Container for Header + Body */}
+      <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 relative">
+        <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-xs">
+          <div style={{ minWidth: '1100px' }}>
+            {/* Grid Header - Inside scroll container */}
+            <div className={`${GRID_COLS_CLASS} gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wide pr-2 sticky top-0 z-10`}>
+              <div className="p-2 flex items-center justify-center cursor-pointer bg-slate-100" onClick={() => setSelectedPids(new Set())}>
+                {selectedPids.size > 0 ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} />}
+              </div>
+              {[
+                { key: 'name', label: '名称' },
+                { key: 'user', label: '用户' },
+                { key: 'pid', label: 'PID' },
+                { key: 'priority', label: '优先级' },
+                { key: 'affinity', label: '亲和性' },
+                { key: 'cpu', label: 'CPU' },
+                { key: 'memory', label: '内存' },
+                { key: 'path', label: '路径' }
+              ].map(({ key, label }) => (
+                <div key={key} onClick={() => handleSort(key)} className="p-2 flex items-center cursor-pointer hover:bg-slate-200 transition-colors select-none bg-slate-100">
+                  {label} {sortConfig.key === key && (sortConfig.direction === 'desc' ? <ArrowDown size={10} className="ml-1" /> : <ArrowUp size={10} className="ml-1" />)}
                 </div>
-              );
-            })}
+              ))}
+            </div>
+
+            {/* Virtual Table Body */}
+            <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+              {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+                const p = processTreeData[virtualRow.index];
+                const active = isSelected(p.pid);
+                return (
+                  <div
+                    key={p.pid}
+                    data-index={virtualRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    onContextMenu={(e) => handleContextMenu(e, p)}
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: `${virtualRow.size}px`,
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    className={`${GRID_COLS_CLASS} gap-px items-center border-b border-slate-50 hover:bg-violet-50/60 transition-colors ${active ? 'bg-violet-100/50' : virtualRow.index % 2 === 0 ? 'bg-white/40' : 'bg-white/10'}`}
+                  >
+                    <div className="flex justify-center">
+                      <button onClick={() => toggleSelect(p.pid)}>
+                        {active ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} className="text-slate-300 hover:text-slate-500" />}
+                      </button>
+                    </div>
+
+                    <Cell className="font-semibold text-slate-700" onClick={() => toggleSelect(p.pid)}>
+                      {/* Tree Indentation */}
+                      {treeViewMode && p.depth > 0 && (
+                        <span style={{ width: p.depth * 16 }} className="inline-block" />
+                      )}
+                      {/* Expand/Collapse Icon */}
+                      {treeViewMode && p.hasChildren && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); toggleExpand(p.pid); }}
+                          className="mr-1 text-slate-400 hover:text-slate-600"
+                        >
+                          {p.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                        </button>
+                      )}
+                      {treeViewMode && !p.hasChildren && p.depth > 0 && (
+                        <span className="w-3 inline-block" />
+                      )}
+                      <img
+                        src={p.icon_base64 ? `data:image/png;base64,${p.icon_base64}` : "https://img.icons8.com/color/48/console.png"}
+                        className="w-4 h-4 mr-2 opacity-80 inline-block"
+                        alt=""
+                        onError={(e) => { e.target.src = "https://img.icons8.com/color/48/console.png"; }}
+                      />
+                      {p.name}
+                    </Cell>
+
+                    <Cell className="text-slate-500">{p.user || 'System'}</Cell>
+                    <Cell className="text-slate-400">{p.pid}</Cell>
+
+                    <Cell>
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] ${p.priority === 'High' || p.priority === 'RealTime' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                        {PRIORITY_MAP_CN[p.priority] || p.priority}
+                      </span>
+                    </Cell>
+
+                    <Cell className="text-slate-400 text-[10px] truncate" title={p.cpu_affinity}>{p.cpu_affinity}</Cell>
+
+                    <Cell className={`${p.cpu_usage > 10 ? 'text-red-500 font-bold' : 'text-slate-600'}`}>
+                      {p.cpu_usage?.toFixed(1)}%
+                    </Cell>
+
+                    <Cell className="text-slate-600">{formatBytes(p.memory_usage || 0)}</Cell>
+
+                    <Cell
+                      className="text-slate-400 truncate cursor-pointer hover:text-violet-500"
+                      title={`${p.path} (双击打开位置)`}
+                      onDoubleClick={() => {
+                        if (p.path) {
+                          // Open folder containing the file and select it
+                          invoke('open_file_location', { path: p.path }).catch(err => {
+                            console.error('Failed to open file location:', err);
+                          });
+                        }
+                      }}
+                    >
+                      {p.path}
+                    </Cell>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-      </div>
 
-      {menuState.visible && typeof document !== 'undefined' && ReactDOM.createPortal(
-        <ProcessContextMenu
-          x={menuState.x}
-          y={menuState.y}
-          process={menuState.process}
-          onClose={() => setMenuState({ ...menuState, visible: false })}
-          onAction={menuAction}
-        />,
-        document.body
-      )}
+        {menuState.visible && typeof document !== 'undefined' && ReactDOM.createPortal(
+          <ProcessContextMenu
+            x={menuState.x}
+            y={menuState.y}
+            process={menuState.process}
+            onClose={() => setMenuState({ ...menuState, visible: false })}
+            onAction={menuAction}
+          />,
+          document.body
+        )}
+      </div>
     </div>
   );
 }

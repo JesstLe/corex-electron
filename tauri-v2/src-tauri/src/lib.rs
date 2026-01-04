@@ -43,6 +43,8 @@ pub struct ProcessInfo {
     pub user: String,
     /// 执行路径
     pub path: String,
+    /// 进程图标 (Base64 PNG, 16x16)
+    pub icon_base64: Option<String>,
 }
 
 /// 优先级级别

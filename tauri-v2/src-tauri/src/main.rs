@@ -74,6 +74,29 @@ async fn terminate_process(pid: u32) -> Result<bool, String> {
         .map_err(|e: AppError| e.to_string())
 }
 
+/// 打开文件所在位置
+#[tauri::command]
+async fn open_file_location(path: String) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        // Use explorer.exe /select,"path" to open folder and highlight the file
+        // The path and /select must be combined as a single argument
+        let select_arg = format!("/select,\"{}\"", path);
+        let output = std::process::Command::new("explorer.exe")
+            .raw_arg(&select_arg)
+            .spawn();
+        
+        match output {
+            Ok(_) => Ok(true),
+            Err(e) => Err(format!("无法打开文件位置: {}", e))
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Err("仅支持 Windows 平台".to_string())
+    }
+}
+
 // ============================================================================
 // Tauri Commands - 内存管理
 // ============================================================================
@@ -252,6 +275,7 @@ pub fn run() {
             set_process_priority,
             trim_process_memory,
             terminate_process,
+            open_file_location,
             // 内存管理
             get_memory_info,
             clear_memory,

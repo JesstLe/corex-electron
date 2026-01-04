@@ -24,7 +24,7 @@ export default function Header({ cpuModel }) {
         </div>
         <div>
           <h1 className="text-lg font-bold bg-gradient-to-r from-violet-600 to-pink-600 bg-clip-text text-transparent">Task Nexus</h1>
-          <p className="text-xs text-slate-400">智能任务调度器</p>
+          <p className="text-xs text-slate-400">任务调度器</p>
         </div>
       </div>
 
