@@ -48,6 +48,7 @@ export interface AppSettings {
     throttleList?: string[];
     launchOnStartup?: boolean;
     closeToTray?: boolean;
+    startMinimized?: boolean;
 }
 
 export interface ToastInfo {

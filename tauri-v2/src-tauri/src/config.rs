@@ -84,6 +84,14 @@ pub async fn get_config() -> AppResult<AppConfig> {
     Ok(config.read().clone())
 }
 
+/// 获取完整配置 (同步版本, 用于 setup hook)
+pub fn get_config_sync() -> AppResult<AppConfig> {
+    let config = CONFIG
+        .get()
+        .ok_or(AppError::ConfigError("Config not initialized".to_string()))?;
+    Ok(config.read().clone())
+}
+
 /// 设置配置值
 pub async fn set_config_value(key: &str, value: serde_json::Value) -> AppResult<()> {
     let config = CONFIG
@@ -102,6 +110,11 @@ pub async fn set_config_value(key: &str, value: serde_json::Value) -> AppResult<
             "closeToTray" => {
                 if let Some(v) = value.as_bool() {
                     cfg.close_to_tray = v;
+                }
+            }
+            "startMinimized" => {
+                if let Some(v) = value.as_bool() {
+                    cfg.start_minimized = v;
                 }
             }
             "cpuAffinityMode" => {

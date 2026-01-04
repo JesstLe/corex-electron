@@ -7,7 +7,7 @@
 use task_nexus_lib::{
     config, governor, hardware, hardware_topology, power, thread, tweaks, AppError,
 };
-// use tauri::AppHandle;
+use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(windows)]
