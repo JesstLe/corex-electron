@@ -1,0 +1,366 @@
+import React from 'react';
+import { Zap, Scale, Trash2, Download, Upload, Settings } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { save, open } from '@tauri-apps/plugin-dialog';
+
+// Import split components
+import { MemoryCleaner } from './MemoryCleaner';
+import { PowerPlanControl, PowerPlanDropZone } from './PowerSettings';
+import { TimerResolutionControl } from './TimerResolution';
+import { SmartTrimControl } from './SmartTrimControl';
+import { ThrottleListEditor } from './ThrottleListEditor';
+import { GameListEditor } from './GameListEditor';
+
+interface ProcessProfile {
+    name: string;
+    mode: string;
+    priority?: string;
+    timestamp: number;
+}
+
+interface DefaultRules {
+    enabled: boolean;
+}
+
+interface ProBalance {
+    enabled: boolean;
+    cpuThreshold: number;
+}
+
+interface AppSettings {
+    profiles?: ProcessProfile[];
+    defaultRules?: DefaultRules;
+    gameList?: string[];
+    proBalance?: ProBalance;
+    smartTrim: any;
+    throttleList?: string[];
+    launchOnStartup?: boolean;
+    closeToTray?: boolean;
+}
+
+interface SettingsPanelProps {
+    mode: string;
+    onModeChange: (mode: string) => void;
+    settings: AppSettings;
+    onSettingChange: (key: string, value: any) => void;
+    onRemoveProfile: (name: string) => void;
+    processes: any[];
+}
+
+export default function SettingsPanel({
+    mode,
+    onModeChange,
+    settings,
+    onSettingChange,
+    onRemoveProfile,
+    processes = []
+}: SettingsPanelProps) {
+
+    const modes = [
+        { id: 'dynamic', label: 'T mode1', icon: Zap },
+        { id: 'd2', label: 'T mode2', icon: Scale, note: '笔记本可用' },
+        { id: 'd3', label: 'T mode3', icon: Zap },
+        { id: 'custom', label: '自定义', icon: Settings, note: '占位' },
+    ];
+
+    const handleImport = async () => {
+        if (!confirm("导入配置将覆盖当前的核心调优设置 (Profiles, SmartTrim, ProBalance 等)，确定继续吗？")) return;
+        try {
+            const path = await open({
+                filters: [{ name: 'JSON Config', extensions: ['json'] }],
+            });
+            if (!path) return;
+
+            await invoke('import_config_file', { path });
+            alert("配置导入成功，即将刷新页面");
+            window.location.reload();
+        } catch (e) {
+            console.error(e);
+            alert("导入失败: " + (e as string));
+        }
+    };
+
+    const handleExport = async () => {
+        try {
+            const path = await save({
+                filters: [{ name: 'JSON Config', extensions: ['json'] }],
+                defaultPath: 'task-nexus-config.json',
+            });
+            if (!path) return;
+            await invoke('export_config_file', { path });
+            alert("配置导出成功");
+        } catch (e) {
+            console.error(e);
+            alert("导出失败: " + (e as string));
+        }
+    };
+
+    return (
+        <div className="space-y-4">
+            {/* 调度模式 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <h4 className="font-medium text-slate-700 mb-4">调度模式</h4>
+                <div className="grid grid-cols-3 gap-3">
+                    {modes.map((m) => {
+                        const isActive = mode === m.id;
+                        const Icon = m.icon;
+
+                        return (
+                            <button
+                                key={m.id}
+                                onClick={() => onModeChange(m.id)}
+                                className={`relative p-4 rounded-xl text-center transition-all duration-200 ${isActive
+                                    ? 'bg-gradient-to-br from-violet-500 to-pink-500 text-white shadow-glow'
+                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
+                                    }`}
+                            >
+                                <Icon size={18} className={`mx-auto ${isActive ? 'text-white' : 'text-violet-500'}`} />
+                                <div className={`font-medium text-sm mt-2 ${isActive ? 'text-white' : 'text-slate-700'}`}>
+                                    {m.label}
+                                </div>
+                                {m.note && (
+                                    <div className={`text-xs mt-0.5 ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
+                                        ({m.note})
+                                    </div>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* 自动化策略 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <h4 className="font-medium text-slate-700 mb-4">自动化策略</h4>
+
+                {!settings.profiles || settings.profiles.length === 0 ? (
+                    <div className="text-center py-6 text-slate-400 text-sm bg-slate-50/50 rounded-xl border border-slate-100 border-dashed">
+                        暂无已保存的自动化策略
+                        <div className="mt-1 text-xs opacity-70">在控制栏点击“保存策略”添加</div>
+                    </div>
+                ) : (
+                    <div className="space-y-2.5">
+                        {settings.profiles.map((profile) => (
+                            <div key={profile.name} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl group hover:border-violet-200 transition-colors">
+                                <div>
+                                    <div className="font-medium text-slate-700 text-sm">{profile.name}</div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="text-[10px] px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-500">
+                                            {modes.find(m => m.id === profile.mode)?.label || profile.mode}
+                                        </span>
+                                        {profile.priority && (
+                                            <span className="text-[10px] px-1.5 py-0.5 bg-white border border-slate-200 rounded text-slate-500">
+                                                优先级: {profile.priority}
+                                            </span>
+                                        )}
+                                        <span className="text-[10px] text-slate-400">
+                                            {new Date(profile.timestamp).toLocaleDateString()}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => onRemoveProfile(profile.name)}
+                                    className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                    title="删除策略"
+                                >
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {/* 默认规则 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <div className="flex items-center justify-between mb-4">
+                    <div>
+                        <h4 className="font-medium text-slate-700">默认规则</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">自动管理进程核心分配</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={!!settings.defaultRules?.enabled}
+                            onChange={(e) => onSettingChange('defaultRules', {
+                                ...settings.defaultRules,
+                                enabled: e.target.checked
+                            })}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                    </label>
+                </div>
+
+                {settings.defaultRules?.enabled && (
+                    <div className="space-y-3 pt-3 border-t border-slate-100">
+                        <div className="flex items-center gap-3 text-sm">
+                            <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                            <span className="text-slate-600">游戏进程 → P-Core / CCD0 (高优先级)</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-sm">
+                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                            <span className="text-slate-600">其他进程 → E-Core / CCD1 (低优先级)</span>
+                        </div>
+                        <div className="pt-2 border-t border-slate-100">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-xs text-slate-500">游戏列表</span>
+                            </div>
+                            <GameListEditor
+                                games={settings.gameList || []}
+                                onUpdate={(list) => onSettingChange('gameList', list)}
+                            />
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* ProBalance */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <div className="flex items-center justify-between mb-2">
+                    <div>
+                        <h4 className="font-medium text-slate-700">ProBalance</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">当游戏运行时，自动压制高负载后台进程</p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={!!settings.proBalance?.enabled}
+                            onChange={(e) => onSettingChange('proBalance', {
+                                ...settings.proBalance,
+                                enabled: e.target.checked
+                            })}
+                            className="sr-only peer"
+                        />
+                        <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                    </label>
+                </div>
+
+                {settings.proBalance?.enabled && (
+                    <div className="flex items-center gap-3 mt-3 pt-3 border-t border-slate-100">
+                        <span className="text-xs text-slate-500 whitespace-nowrap">触发阈值 (CPU %)</span>
+                        <div className="flex-1 flex items-center gap-2">
+                            <input
+                                type="range"
+                                min="5"
+                                max="50"
+                                step="1"
+                                value={settings.proBalance?.cpuThreshold || 20}
+                                onChange={(e) => onSettingChange('proBalance', {
+                                    ...settings.proBalance,
+                                    cpuThreshold: parseInt(e.target.value)
+                                })}
+                                className="flex-1 h-1.5 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                            />
+                            <span className="w-8 text-xs text-right font-mono text-slate-600">
+                                {settings.proBalance?.cpuThreshold || 20}%
+                            </span>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* 内存优化 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium text-slate-700">内存优化</h4>
+                    <MemoryCleaner />
+                </div>
+                <SmartTrimControl
+                    settings={settings.smartTrim}
+                    onUpdate={(val) => onSettingChange('smartTrim', val)}
+                />
+            </div>
+
+            {/* 电源计划 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium text-slate-700">电源计划</h4>
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-400">拖入.pow导入</span>
+                        <PowerPlanControl />
+                    </div>
+                </div>
+                <PowerPlanDropZone />
+            </div>
+
+            {/* 后台压制 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium text-slate-700">后台进程压制</h4>
+                </div>
+                <ThrottleListEditor
+                    items={settings.throttleList || []}
+                    onUpdate={(list) => onSettingChange('throttleList', list)}
+                    processes={processes}
+                />
+            </div>
+
+            {/* 高精度定时器 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h4 className="font-medium text-slate-700">高精度定时器</h4>
+                        <p className="text-xs text-slate-400 mt-0.5">降低输入延迟，仅对调度进程生效</p>
+                    </div>
+                    <TimerResolutionControl />
+                </div>
+            </div>
+
+            {/* 系统设置 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <h4 className="font-medium text-slate-700 mb-4">系统设置</h4>
+                <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h5 className="font-medium text-slate-700">开机自启动</h5>
+                            <p className="text-xs text-slate-400">系统启动时自动运行程序</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={!!settings.launchOnStartup}
+                                onChange={(e) => onSettingChange('launchOnStartup', e.target.checked)}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                        </label>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <h5 className="font-medium text-slate-700">关闭时最小化</h5>
+                            <p className="text-xs text-slate-400">点击关闭按钮时隐藏到托盘</p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={!!settings.closeToTray}
+                                onChange={(e) => onSettingChange('closeToTray', e.target.checked)}
+                                className="sr-only peer"
+                            />
+                            <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                        </label>
+                    </div>
+
+                    <div className="pt-4 border-t border-slate-100 flex gap-3">
+                        <button
+                            onClick={handleImport}
+                            className="flex-1 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Download size={16} />
+                            导入配置
+                        </button>
+                        <button
+                            onClick={handleExport}
+                            className="flex-1 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
+                        >
+                            <Upload size={16} />
+                            导出配置
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}

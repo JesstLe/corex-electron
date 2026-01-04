@@ -143,6 +143,57 @@ pub async fn list_power_plans() -> AppResult<serde_json::Value> {
     Err(AppError::SystemError("仅支持 Windows".to_string()))
 }
 
+/// 导入电源计划 (.pow 文件)
+#[cfg(windows)]
+pub async fn import_power_plan(path: String) -> AppResult<serde_json::Value> {
+    use std::process::Command;
+
+    tokio::task::spawn_blocking(move || {
+        let output = Command::new("powercfg")
+            .args(["-import", &path])
+            .output()
+            .map_err(|e| AppError::SystemError(e.to_string()))?;
+
+        if output.status.success() {
+            let stdout = crate::decode_output(&output.stdout);
+            let guid = extract_guid(&stdout).ok_or_else(|| {
+                AppError::SystemError("导出成功但无法获取新 GUID".to_string())
+            })?;
+
+            Ok(serde_json::json!({
+                "success": true,
+                "guid": guid
+            }))
+        } else {
+            let stderr = crate::decode_output(&output.stderr);
+            Err(AppError::SystemError(stderr.to_string()))
+        }
+    })
+    .await
+    .map_err(|e| AppError::SystemError(e.to_string()))?
+}
+
+#[cfg(not(windows))]
+pub async fn import_power_plan(_path: String) -> AppResult<serde_json::Value> {
+    Err(AppError::SystemError("仅支持 Windows".to_string()))
+}
+
+/// 打开系统电源设置面板
+#[cfg(windows)]
+pub fn open_power_settings() -> AppResult<bool> {
+    use std::process::Command;
+    Command::new("control")
+        .arg("powercfg.cpl")
+        .spawn()
+        .map(|_| true)
+        .map_err(|e| AppError::SystemError(e.to_string()))
+}
+
+#[cfg(not(windows))]
+pub fn open_power_settings() -> AppResult<bool> {
+    Err(AppError::SystemError("仅支持 Windows".to_string()))
+}
+
 /// 从字符串中提取 GUID
 fn extract_guid(s: &str) -> Option<String> {
     let re_pattern = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";

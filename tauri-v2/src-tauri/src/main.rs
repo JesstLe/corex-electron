@@ -197,6 +197,21 @@ async fn list_power_plans() -> Result<serde_json::Value, String> {
         .map_err(|e: AppError| e.to_string())
 }
 
+/// 导入电源计划
+#[tauri::command]
+async fn import_power_plan(path: String) -> Result<serde_json::Value, String> {
+    power::import_power_plan(path)
+        .await
+        .map_err(|e: AppError| e.to_string())
+}
+
+/// 打开电源面板
+#[tauri::command]
+async fn open_power_settings() -> Result<bool, String> {
+    power::open_power_settings()
+        .map_err(|e: AppError| e.to_string())
+}
+
 // ============================================================================
 // Tauri Commands - 系统优化
 // ============================================================================
@@ -206,6 +221,20 @@ async fn list_power_plans() -> Result<serde_json::Value, String> {
 async fn get_tweaks() -> Result<serde_json::Value, String> {
     tweaks::get_available_tweaks()
         .await
+        .map_err(|e: AppError| e.to_string())
+}
+
+/// 获取当前定时器分辨率
+#[tauri::command]
+async fn get_timer_resolution() -> Result<f64, String> {
+    tweaks::get_timer_resolution()
+        .map_err(|e: AppError| e.to_string())
+}
+
+/// 设置系统定时器精度
+#[tauri::command]
+async fn set_timer_resolution(res_ms: f64) -> Result<f64, String> {
+    tweaks::set_timer_resolution(res_ms)
         .map_err(|e: AppError| e.to_string())
 }
 
@@ -322,6 +351,15 @@ async fn stop_cpu_monitor() -> Result<bool, String> {
     Ok(true)
 }
 
+/// 获取许可证状态
+#[tauri::command]
+async fn get_license_status() -> Result<serde_json::Value, String> {
+    Ok(serde_json::json!({
+        "activated": true,
+        "type": "Ultimate"
+    }))
+}
+
 // ============================================================================
 // 应用入口
 // ============================================================================
@@ -380,9 +418,13 @@ pub fn run() {
             get_power_plan,
             set_power_plan,
             list_power_plans,
+            import_power_plan,
+            open_power_settings,
             // 系统优化
             get_tweaks,
             apply_tweaks,
+            get_timer_resolution,
+            set_timer_resolution,
             // 配置管理
             get_settings,
             set_setting,
@@ -398,6 +440,7 @@ pub fn run() {
             // CPU 监控
             start_cpu_monitor,
             stop_cpu_monitor,
+            get_license_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

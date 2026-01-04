@@ -142,6 +142,72 @@ pub async fn apply_tweaks(_tweak_ids: &[String]) -> AppResult<serde_json::Value>
     Err(AppError::SystemError("仅支持 Windows".to_string()))
 }
 
+/// 获取系统当前定时器分辨率 (单位: ms)
+#[cfg(windows)]
+pub fn get_timer_resolution() -> AppResult<f64> {
+    use windows::Win32::System::WindowsProgramming::{NtQueryTimerResolution};
+
+    unsafe {
+        let mut min: u32 = 0;
+        let mut max: u32 = 0;
+        let mut cur: u32 = 0;
+
+        let status = NtQueryTimerResolution(&mut min, &mut max, &mut cur);
+        if status.0 == 0 {
+            // 返回值单位是 100ns，转换为 ms: cur / 10000.0
+            Ok(cur as f64 / 10000.0)
+        } else {
+            Err(AppError::SystemError(format!("NtQueryTimerResolution failed: 0x{:X}", status.0)))
+        }
+    }
+}
+
+/// 设置系统当前定时器分辨率 (单位: ms)
+/// 设置为 0 表示关闭 (恢复默认)
+#[cfg(windows)]
+pub fn set_timer_resolution(res_ms: f64) -> AppResult<f64> {
+    use windows::Win32::System::WindowsProgramming::{NtQueryTimerResolution, NtSetTimerResolution};
+
+    unsafe {
+        // 先查询范围
+        let mut min: u32 = 0;
+        let mut max: u32 = 0;
+        let mut cur: u32 = 0;
+        NtQueryTimerResolution(&mut min, &mut max, &mut cur);
+
+        // 如果 res_ms 为 0，则尝试恢复默认 (通常是请求 min 或取消请求)
+        // 实际上 NtSetTimerResolution 的第二个参数是 Set (boolean)
+        let (set, res_val) = if res_ms <= 0.0 {
+            (0, min) // 取消请求
+        } else {
+            // 限制在范围内
+            let mut requested = (res_ms * 10000.0) as u32;
+            if requested < max { requested = max; }
+            if requested > min { requested = min; }
+            (1, requested)
+        };
+
+        let mut actual: u32 = 0;
+        let status = NtSetTimerResolution(res_val, set, &mut actual);
+        
+        if status.0 == 0 || status.0 == 0x00000000u32 {
+            Ok(actual as f64 / 10000.0)
+        } else {
+            Err(AppError::SystemError(format!("NtSetTimerResolution failed: 0x{:X}", status.0)))
+        }
+    }
+}
+
+#[cfg(not(windows))]
+pub fn get_timer_resolution() -> AppResult<f64> {
+     Err(AppError::SystemError("仅支持 Windows".to_string()))
+}
+
+#[cfg(not(windows))]
+pub fn set_timer_resolution(_res_ms: f64) -> AppResult<f64> {
+     Err(AppError::SystemError("仅支持 Windows".to_string()))
+}
+
 /// 获取优化项映射
 fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
     let mut map = std::collections::HashMap::new();
