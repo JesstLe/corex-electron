@@ -227,8 +227,8 @@ function App() {
 
         if (result.success) {
           setStatus('active');
-          const statusMsg = prioritySuccess ? ` | 优先级: ${priority} ` : ' (优先级设置失败)';
-          showToast(`已应用到进程 ${selectedPid}${statusMsg} `, 'success');
+          const statusMsg = prioritySuccess ? ` | 优先级: ${priority}` : ' (优先级设置失败)';
+          showToast(`已应用到进程 ${selectedPid}${statusMsg}，建议点击清理内存`, 'success', 5000);
 
           // Auto-trigger aggressive memory cleanup when using 'dynamic' mode (silent)
           if (mode === 'dynamic' && window.electron?.clearMemory) {

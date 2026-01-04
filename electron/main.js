@@ -87,7 +87,8 @@ const DEFAULT_CONFIG = {
     'cod.exe', 'modernwarfare.exe', 'blackopscoldwar.exe',
     'eldenring.exe', 'darksouls3.exe',
     'cyberpunk2077.exe', 'witcher3.exe',
-    'baldursgate3.exe', 'bg3.exe'
+    'baldursgate3.exe', 'bg3.exe',
+    'narakabladepoint.exe', 'naraka.exe'
   ],
 
   // 排除列表 - 永不处理的进程
