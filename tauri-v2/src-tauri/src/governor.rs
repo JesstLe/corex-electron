@@ -131,7 +131,6 @@ pub async fn get_process_snapshot() -> AppResult<Vec<ProcessInfo>> {
                 thread_count,
                 user,
                 path,
-                icon_base64: None, // TODO: Implement icon extraction
             });
         }
 

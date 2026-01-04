@@ -41,6 +41,18 @@ async fn get_cpu_topology() -> Result<Vec<hardware_topology::LogicalCore>, Strin
 }
 
 // ============================================================================
+// Tauri Commands - Icon
+// ============================================================================
+
+/// 获取文件图标 (Base64)
+#[tauri::command]
+async fn get_process_icon(path: String) -> Result<String, String> {
+    task_nexus_lib::icons::get_process_icon(path)
+        .await
+        .map_err(|e| e)
+}
+
+// ============================================================================
 // Tauri Commands - 进程管理
 // ============================================================================
 
@@ -487,6 +499,7 @@ pub fn run() {
             get_cpu_info,
             get_cpu_loads,
             get_cpu_topology,
+            get_process_icon,
             // 进程管理
             get_processes,
             set_affinity,

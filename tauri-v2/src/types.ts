@@ -26,7 +26,6 @@ export interface ProcessInfo {
     cpu_affinity?: string;
     path?: string;
     parent_pid?: number;
-    icon_base64?: string;
 }
 
 export interface ProcessProfile {
@@ -59,6 +58,7 @@ export interface AppSettings {
     launchOnStartup?: boolean;
     closeToTray?: boolean;
     startMinimized?: boolean;
+    mode?: string;
 }
 
 export interface ToastInfo {

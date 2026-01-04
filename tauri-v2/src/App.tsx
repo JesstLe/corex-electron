@@ -60,6 +60,9 @@ function App() {
 
                 const savedSettings = await invoke<AppSettings>('get_settings');
                 setSettings(savedSettings || {});
+                if (savedSettings?.mode) {
+                    setMode(savedSettings.mode);
+                }
 
                 const licenseStatus = await invoke<{ activated: boolean }>('get_license_status');
                 setIsActivated(licenseStatus.activated);

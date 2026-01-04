@@ -10,6 +10,7 @@ import SmartAffinitySelector from './SmartAffinitySelector';
 import { ProcessInfo, AppSettings } from '../types';
 
 // New Modular Imports
+import { ProcessIcon } from './common/ProcessIcon';
 import { MiniGraph } from './common/MiniGraph';
 import { ModeSelector } from './process/ModeSelector';
 import { ProcessContextMenu } from './process/ProcessContextMenu';
@@ -88,15 +89,82 @@ export default function ProcessScanner({
     const [affinityModal, setAffinityModal] = useState<{ visible: boolean, process: any }>({ visible: false, process: null });
 
     // Handlers
-    const handleModeClick = (id: string) => {
+    const handleModeClick = async (id: string) => {
         if (id === 'custom') {
             setIsGeekEditorOpen(true);
-        } else {
-            console.log("Setting mode to:", id);
-            setMode(id);
-            if (id !== 'custom') {
-                showToast(`已切换到${id}`, 'success'); // Improved toast logic could be here mapping ID to label if needed, but simple is fine
+            return;
+        }
+
+        console.log("Setting mode to:", id);
+        setMode(id);
+
+        // Auto-apply to selected processes
+        if (selectedPids.size > 0) {
+            const modeLabels: Record<string, string> = { 'dynamic': 'T mode1', 'd2': 'T mode2', 'd3': 'T mode3' };
+            let successCount = 0;
+            let failCount = 0;
+
+            for (const pid of selectedPids) {
+                try {
+                    // Use full system affinity mask (all cores)
+                    const allCoresMask = ((1n << BigInt(navigator.hardwareConcurrency || 16)) - 1n).toString();
+                    await invoke('set_affinity', {
+                        pid,
+                        coreMask: allCoresMask,
+                        mode: id,
+                        primaryCore: null
+                    });
+                    successCount++;
+                } catch (e) {
+                    console.error(`Failed to apply mode to PID ${pid}:`, e);
+                    failCount++;
+                }
             }
+
+            if (successCount > 0) {
+                showToast(`已应用 ${modeLabels[id] || id} 到 ${successCount} 个进程`, 'success');
+            }
+            if (failCount > 0) {
+                showToast(`${failCount} 个进程应用失败`, 'warning');
+            }
+        } else {
+            // No process selected, just show mode switch notification
+            const modeLabels: Record<string, string> = { 'dynamic': 'T mode1', 'd2': 'T mode2', 'd3': 'T mode3' };
+            showToast(`已切换到 ${modeLabels[id] || id}，请选择进程后再次点击以应用`, 'info');
+        }
+    };
+
+    // Double-click: Apply to selected processes only
+    const handleModeDoubleClick = async (id: string) => {
+        if (id === 'custom') return;
+
+        if (selectedPids.size > 0) {
+            const modeLabels: Record<string, string> = { 'dynamic': 'T mode1', 'd2': 'T mode2', 'd3': 'T mode3' };
+            let successCount = 0;
+
+            showToast(`正在应用到所选进程...`, 'info');
+
+            for (const pid of selectedPids) {
+                try {
+                    const allCoresMask = ((1n << BigInt(navigator.hardwareConcurrency || 16)) - 1n).toString();
+                    await invoke('set_affinity', {
+                        pid,
+                        coreMask: allCoresMask,
+                        mode: id,
+                        primaryCore: null
+                    });
+                    successCount++;
+                } catch (e) {
+                    console.error(`Apply failed for ${pid}:`, e);
+                }
+            }
+
+            if (successCount > 0) {
+                showToast(`已成功应用到 ${successCount} 个所选进程`, 'success');
+            }
+        } else {
+            // No selection -> treat as single click (Global)
+            handleModeClick(id);
         }
     };
 
@@ -217,7 +285,11 @@ export default function ProcessScanner({
 
     return (
         <div className="flex flex-col h-full gap-4">
-            <ModeSelector mode={mode} onModeClick={handleModeClick} />
+            <ModeSelector
+                mode={mode}
+                onModeClick={handleModeClick}
+                onModeDoubleClick={handleModeDoubleClick}
+            />
 
             <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col min-h-[500px] h-[500px] overflow-hidden bg-white/50 backdrop-blur-md">
                 <ProcessMetricsHeader
@@ -267,7 +339,7 @@ export default function ProcessScanner({
                                                         {p.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                                     </button>
                                                 )}
-                                                <img src={p.icon_base64 ? `data:image/png;base64,${p.icon_base64}` : "https://img.icons8.com/color/48/console.png"} className="w-4 h-4 mr-2" alt="" />
+                                                <ProcessIcon path={p.path} name={p.name} className="w-4 h-4 mr-2" />
                                                 {p.name}
                                             </div>
                                             <div className="px-2 py-1.5 truncate text-slate-500">{p.user || 'System'}</div>

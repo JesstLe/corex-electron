@@ -11,6 +11,7 @@ pub mod security;
 pub mod thread;
 pub mod tweaks;
 pub mod watchdog;
+pub mod icons;
 
 use serde::{Deserialize, Serialize};
 // use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,8 +49,6 @@ pub struct ProcessInfo {
     pub user: String,
     /// 执行路径
     pub path: String,
-    /// 进程图标 (Base64 PNG, 16x16)
-    pub icon_base64: Option<String>,
 }
 
 /// 优先级级别
@@ -300,6 +299,9 @@ pub struct AppConfig {
     pub start_minimized: bool,
     /// CPU 亲和性模式
     pub cpu_affinity_mode: String,
+    /// 调度模式 (前端用)
+    #[serde(default)]
+    pub mode: Option<String>,
     /// 进程策略列表
     pub profiles: Vec<ProcessProfile>,
     /// 默认规则
@@ -329,6 +331,7 @@ impl Default for AppConfig {
             close_to_tray: false,
             start_minimized: false,
             cpu_affinity_mode: "dynamic".to_string(),
+            mode: None,
             profiles: Vec::new(),
             default_rules: DefaultRules::default(),
             game_list: vec![

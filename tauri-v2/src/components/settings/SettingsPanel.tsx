@@ -243,7 +243,7 @@ export default function SettingsPanel({
                 <div className="flex items-center justify-between">
                     <div>
                         <h4 className="font-medium text-slate-700">高精度定时器</h4>
-                        <p className="text-xs text-slate-400 mt-0.5">降低输入延迟，仅对调度进程生效</p>
+                        <p className="text-xs text-slate-400 mt-0.5">降低输入延迟</p>
                     </div>
                     <TimerResolutionControl />
                 </div>

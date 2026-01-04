@@ -82,15 +82,15 @@ export default function ControlBar({
                     )}
                 </div>
 
+                {/* Save Profile Button - Always visible */}
+                <button onClick={onSaveProfile} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:text-violet-600 transition-all font-medium flex items-center gap-2 text-sm">
+                    <Save size={14} /><span className="hidden sm:inline">保存策略</span>
+                </button>
+
                 {isRunning && (
-                    <>
-                        <button onClick={onSaveProfile} className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:text-violet-600 transition-all font-medium flex items-center gap-2 text-sm">
-                            <Save size={14} /><span className="hidden sm:inline">保存策略</span>
-                        </button>
-                        <button onClick={onStop} className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:text-red-500 transition-all font-medium flex items-center gap-2 text-sm">
-                            <Square size={14} fill="currentColor" /><span className="hidden sm:inline">停止</span>
-                        </button>
-                    </>
+                    <button onClick={onStop} className="px-5 py-2.5 rounded-xl border border-slate-200 text-slate-600 hover:text-red-500 transition-all font-medium flex items-center gap-2 text-sm">
+                        <Square size={14} fill="currentColor" /><span className="hidden sm:inline">停止</span>
+                    </button>
                 )}
 
                 <button

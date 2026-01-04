@@ -35,6 +35,8 @@ base64 = "0.22"
 sha2 = "0.10"
 hmac = "0.12"
 hex = "0.4"
+image = "0.25.6"
+scopeguard = "1.2.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [
@@ -52,6 +54,8 @@ windows = { version = "0.58", features = [
     "Win32_System_Memory",
     "Win32_Graphics_Gdi",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_UI_Shell",
+    "Win32_Storage_FileSystem",
     "Wdk_System_SystemInformation"
 ] }
 sysinfo = "0.31"

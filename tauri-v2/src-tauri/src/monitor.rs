@@ -96,7 +96,6 @@ impl ProcessMonitor {
                         thread_count: _thread_count_win,
                         user,
                         path,
-                        icon_base64: None, // TODO: Implement icon extraction
                     });
                 }
 
