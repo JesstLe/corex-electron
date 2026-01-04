@@ -98,6 +98,13 @@ function App() {
 
     setScanning(true);
     setError(null);
+
+    // Timeout protection - reset scanning state after 20 seconds max
+    const timeoutId = setTimeout(() => {
+      console.warn('Scan timeout - resetting state');
+      setScanning(false);
+    }, 20000);
+
     try {
       if (window.electron) {
         const list = await window.electron.getProcesses();
@@ -118,6 +125,7 @@ function App() {
       console.error('扫描失败:', e);
       setProcesses([]);
     } finally {
+      clearTimeout(timeoutId);
       setScanning(false);
     }
   };

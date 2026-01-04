@@ -1369,10 +1369,15 @@ ipcMain.handle('get-cpu-info', () => {
 
 ipcMain.handle('get-processes', async () => {
   // UI needs Priority (for colors). Path is NOT needed (saves 1 wmic call).
-  return await getProcessesList({ includePriority: true, includePath: false }).catch(err => {
+  try {
+    writeLog('INFO', '[IPC] get-processes called');
+    const result = await getProcessesList({ includePriority: true, includePath: false });
+    writeLog('INFO', `[IPC] get-processes returned ${result?.length || 0} processes`);
+    return result;
+  } catch (err) {
     writeLog('WARN', `[IPC] get-processes failed: ${err.message}`);
     return [];
-  });
+  }
 });
 
 
