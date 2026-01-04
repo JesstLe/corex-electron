@@ -1,14 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+pub mod config;
+pub mod cpu_sets;
 pub mod governor;
 pub mod hardware;
-pub mod config;
-pub mod power;
-pub mod tweaks;
-pub mod monitor;
-pub mod watchdog;
-pub mod thread;
 pub mod hardware_topology;
+pub mod monitor;
+pub mod power;
+pub mod thread;
+pub mod tweaks;
+pub mod watchdog;
 
 use serde::{Deserialize, Serialize};
 
@@ -71,7 +72,7 @@ impl PriorityLevel {
             PriorityLevel::RealTime => "RealTime",
         }
     }
-    
+
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "idle" => Some(PriorityLevel::Idle),
@@ -368,22 +369,22 @@ impl Default for AppConfig {
 pub enum AppError {
     #[error("进程不存在或无权限访问: {0}")]
     ProcessNotFound(u32),
-    
+
     #[error("无效的进程 ID: {0}")]
     InvalidPid(u32),
-    
+
     #[error("无效的核心掩码: {0}")]
     InvalidAffinityMask(String),
-    
+
     #[error("系统调用失败: {0}")]
     SystemError(String),
-    
+
     #[error("配置错误: {0}")]
     ConfigError(String),
-    
+
     #[error("IO 错误: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("JSON 错误: {0}")]
     JsonError(#[from] serde_json::Error),
 }

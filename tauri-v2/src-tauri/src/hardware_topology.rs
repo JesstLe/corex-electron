@@ -1,9 +1,9 @@
 //! 硬件拓扑探测模块
-//! 
+//!
 //! 用于检测 CPU 混合架构 (Intel P/E 核) 和 AMD 3D V-Cache 核心。
 //! 不依赖 sysinfo，直接使用 Windows API。
 
-use serde::{Serialize};
+use serde::Serialize;
 use std::collections::HashMap;
 use windows::Win32::System::SystemInformation::{
     GetLogicalProcessorInformationEx, RelationAll, RelationCache, RelationProcessorCore,
@@ -12,25 +12,25 @@ use windows::Win32::System::SystemInformation::{
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub enum CoreType {
-    Performance,  // Intel P-Core / AMD Frequency Core / Standard Core
-    Efficiency,   // Intel E-Core
-    VCache,       // AMD 3D V-Cache Core (High L3)
+    Performance, // Intel P-Core / AMD Frequency Core / Standard Core
+    Efficiency,  // Intel E-Core
+    VCache,      // AMD 3D V-Cache Core (High L3)
     Unknown,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LogicalCore {
-    pub id: usize,           // OS Logical Processor ID (0..N)
+    pub id: usize, // OS Logical Processor ID (0..N)
     pub core_type: CoreType,
-    pub physical_id: usize,  // Which physical core it belongs to
-    pub group_id: u32,       // For AMD: CCD Index; For Intel: 0 (Approximated by GroupMask)
+    pub physical_id: usize, // Which physical core it belongs to
+    pub group_id: u32,      // For AMD: CCD Index; For Intel: 0 (Approximated by GroupMask)
 }
 
 /// 获取 CPU 拓扑信息
 pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
     // 1. 获取所有逻辑处理器信息
     let info_list = get_logical_processor_info_ex()?;
-    
+
     // 2. 分析缓存 (Step A: Cache Analysis - Crucial for AMD)
     // Map: GroupMask -> L3 Cache Size (bytes)
     let mut l3_cache_map: HashMap<usize, u64> = HashMap::new();
@@ -40,12 +40,13 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
     for info in &info_list {
         if info.Relationship == RelationCache {
             let cache = unsafe { info.Anonymous.Cache };
-            if cache.Level == 3 { // L3 Cache
+            if cache.Level == 3 {
+                // L3 Cache
                 // Fix: Access GroupMask via Anonymous union
                 let mask = unsafe { cache.Anonymous.GroupMask.Mask };
                 let size = cache.CacheSize as u64;
                 l3_cache_map.insert(mask, size);
-                
+
                 // 将 mask 下的所有核心映射到这个 mask (作为 GroupID/CCD ID)
                 for i in 0..64 {
                     if (mask >> i) & 1 == 1 {
@@ -57,15 +58,15 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
     }
 
     // 检测是否存在 AMD V-Cache (是否存在显著较大的 L3 Cache)
-    // 阈值：通常标准 L3 是 32MB (33554432)，V-Cache 是 96MB+ 
+    // 阈值：通常标准 L3 是 32MB (33554432)，V-Cache 是 96MB+
     // 我们设定一个阈值 64MB
     let vcache_threshold = 64 * 1024 * 1024;
     let has_large_l3 = l3_cache_map.values().any(|&size| size > vcache_threshold);
-    
+
     // 3. 分析核心架构 (Step B: Architecture Analysis)
     let mut logical_cores = Vec::new();
     let mut efficiency_classes = Vec::new();
-    
+
     // 临时存储核心信息以便后续判定
     struct TempCore {
         id: usize,
@@ -73,7 +74,7 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
         efficiency_class: u8,
     }
     let mut temp_cores = Vec::new();
-    
+
     let mut current_physical_id = 0;
 
     for info in &info_list {
@@ -81,14 +82,14 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
             let processor = unsafe { info.Anonymous.Processor };
             let mask = processor.GroupMask[0].Mask;
             let efficiency_class = processor.EfficiencyClass;
-            
+
             efficiency_classes.push(efficiency_class);
 
             // 一个 ProcessorCore 可能对应多个逻辑核心 (超线程)
             // 遍历 bitmask 找到对应的逻辑核心 ID
             for i in 0..64 {
                 if (mask >> i) & 1 == 1 {
-                     temp_cores.push(TempCore {
+                    temp_cores.push(TempCore {
                         id: i,
                         physical_id: current_physical_id,
                         efficiency_class,
@@ -108,7 +109,7 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
     // 4. 整合信息 (Consolidation)
     for core in temp_cores {
         let mut core_type = CoreType::Unknown;
-        
+
         // AMD V-Cache 判断逻辑
         if has_large_l3 {
             // 找到该核心所属的 Cache Group
@@ -123,9 +124,9 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
                     core_type = CoreType::Performance;
                 }
             } else {
-                 core_type = CoreType::Performance;
+                core_type = CoreType::Performance;
             }
-        } 
+        }
         // Intel Hybrid 判断逻辑
         else if core.efficiency_class == 1 {
             core_type = CoreType::Performance;
@@ -136,10 +137,10 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
                 core_type = CoreType::Performance;
             }
         } else {
-             // 更高的 efficiency class 也视为 Performance
-             core_type = CoreType::Performance;
+            // 更高的 efficiency class 也视为 Performance
+            core_type = CoreType::Performance;
         }
-        
+
         // 获取简单的 Group ID (使用 Cache Mask 作为 ID 的一部分，简化处理)
         let group_id = *core_group_map.get(&core.id).unwrap_or(&0) as u32;
 
@@ -160,22 +161,18 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
 /// Helper: 调用 GetLogicalProcessorInformationEx 获取原始数据
 fn get_logical_processor_info_ex() -> Result<Vec<SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX>, String> {
     let mut buffer_size: u32 = 0;
-    
+
     unsafe {
         // 第一次调用获取所需缓冲区大小
-        let _ = GetLogicalProcessorInformationEx(
-            RelationAll,
-            None,
-            &mut buffer_size,
-        );
-        
+        let _ = GetLogicalProcessorInformationEx(RelationAll, None, &mut buffer_size);
+
         if buffer_size == 0 {
             return Err("Failed to get logical processor info size".to_string());
         }
 
         // 分配缓冲区
         let mut buffer: Vec<u8> = vec![0; buffer_size as usize];
-        
+
         // 第二次调用获取数据
         let ret = GetLogicalProcessorInformationEx(
             RelationAll,
@@ -190,19 +187,19 @@ fn get_logical_processor_info_ex() -> Result<Vec<SYSTEM_LOGICAL_PROCESSOR_INFORM
         // 解析缓冲区
         let mut info_list = Vec::new();
         let mut offset = 0;
-        
+
         while offset < buffer_size as usize {
             let ptr = buffer.as_ptr().add(offset) as *const SYSTEM_LOGICAL_PROCESSOR_INFORMATION_EX;
             let info = *ptr; // Copy the struct
-            
+
             info_list.push(info);
-            
+
             if info.Size == 0 {
                 break;
             }
             offset += info.Size as usize;
         }
-        
+
         Ok(info_list)
     }
 }
@@ -217,16 +214,31 @@ mod tests {
             Ok(topo) => {
                 println!("Detected {} logical cores", topo.len());
                 for core in &topo {
-                    println!("Core {}: Type={:?}, PhysID={}, Group={}", core.id, core.core_type, core.physical_id, core.group_id);
+                    println!(
+                        "Core {}: Type={:?}, PhysID={}, Group={}",
+                        core.id, core.core_type, core.physical_id, core.group_id
+                    );
                 }
-                
-                let p_cores = topo.iter().filter(|c| c.core_type == CoreType::Performance).count();
-                let e_cores = topo.iter().filter(|c| c.core_type == CoreType::Efficiency).count();
-                let v_cores = topo.iter().filter(|c| c.core_type == CoreType::VCache).count();
-                
-                println!("Summary: P-Cores={}, E-Cores={}, V-Cache Cores={}", p_cores, e_cores, v_cores);
+
+                let p_cores = topo
+                    .iter()
+                    .filter(|c| c.core_type == CoreType::Performance)
+                    .count();
+                let e_cores = topo
+                    .iter()
+                    .filter(|c| c.core_type == CoreType::Efficiency)
+                    .count();
+                let v_cores = topo
+                    .iter()
+                    .filter(|c| c.core_type == CoreType::VCache)
+                    .count();
+
+                println!(
+                    "Summary: P-Cores={}, E-Cores={}, V-Cache Cores={}",
+                    p_cores, e_cores, v_cores
+                );
                 assert!(topo.len() > 0);
-            },
+            }
             Err(e) => panic!("Failed to get topology: {}", e),
         }
     }

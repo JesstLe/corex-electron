@@ -17,6 +17,7 @@ const CoreTypeLabels = {
 
 export default function SmartAffinitySelector({ topology = [], currentAffinity = "All", onApply, onClose }) {
     const [hexMask, setHexMask] = useState("");
+    const [affinityMode, setAffinityMode] = useState('hard'); // hard | soft
     const coreCount = topology.length || navigator.hardwareConcurrency || 16;
 
     // Initialize mask
@@ -83,16 +84,33 @@ export default function SmartAffinitySelector({ topology = [], currentAffinity =
     return (
         <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl flex flex-col max-h-[90vh]">
-                {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
                     <div className="flex items-center gap-3">
-                        <div className="p-2 bg-violet-100 rounded-lg text-violet-600">
+                        <div className={`p-2 rounded-lg transition-colors ${affinityMode === 'hard' ? 'bg-violet-100 text-violet-600' : 'bg-blue-100 text-blue-600'}`}>
                             <Cpu size={20} />
                         </div>
                         <div>
-                            <h3 className="font-bold text-slate-800 text-lg">CPU 亲和性选择 (Smart Affinity)</h3>
+                            <div className="flex items-center gap-2">
+                                <h3 className="font-bold text-slate-800 text-lg">CPU 亲和性选择</h3>
+                                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                    <button
+                                        onClick={() => setAffinityMode('hard')}
+                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all ${affinityMode === 'hard' ? 'bg-white text-violet-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                    >
+                                        强制 (Hard)
+                                    </button>
+                                    <button
+                                        onClick={() => setAffinityMode('soft')}
+                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all ${affinityMode === 'soft' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                                        title="CPU Sets: 允许 OS 在必要时调度到其他核心"
+                                    >
+                                        柔性 (Sets)
+                                    </button>
+                                </div>
+                            </div>
                             <p className="text-xs text-slate-500">
-                                {hasVCache ? "检测到 AMD 3D V-Cache 处理器" : hasECores ? "检测到 Intel 混合架构处理器" : "标准处理器拓扑"}
+                                {hasVCache ? "检测到 AMD 3D V-Cache 处理器" : hasECores ? "检测到 Intel 混合架构处理器" : "标准处理拓扑"}
+                                {affinityMode === 'soft' && <span className="text-blue-500 ml-1 font-medium">- 推荐用于后台应用稳定运行</span>}
                             </p>
                         </div>
                     </div>
@@ -201,7 +219,8 @@ export default function SmartAffinitySelector({ topology = [], currentAffinity =
                             type="text"
                             value={hexMask}
                             onChange={handleHexChange}
-                            className="w-32 text-sm font-mono text-slate-700 outline-none uppercase placeholder:text-slate-300"
+                            disabled={affinityMode === 'soft'}
+                            className={`w-32 text-sm font-mono outline-none uppercase placeholder:text-slate-300 ${affinityMode === 'soft' ? 'text-slate-400 bg-transparent cursor-not-allowed' : 'text-slate-700'}`}
                             placeholder="AFFINITY"
                         />
                     </div>
@@ -214,10 +233,13 @@ export default function SmartAffinitySelector({ topology = [], currentAffinity =
                             取消
                         </button>
                         <button
-                            onClick={() => onApply(selectedMask.toString())} // Pass logical string for BigInt
-                            className="px-6 py-2 text-sm font-bold text-white bg-violet-600 hover:bg-violet-700 rounded-lg shadow-lg shadow-violet-500/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                            onClick={() => {
+                                const coreIds = topology.filter(c => (selectedMask & (1n << BigInt(c.id))) !== 0n).map(c => c.id);
+                                onApply(selectedMask.toString(), affinityMode, coreIds);
+                            }}
+                            className={`px-6 py-2 text-sm font-bold text-white rounded-lg shadow-lg transition-all hover:scale-[1.02] active:scale-[0.98] ${affinityMode === 'hard' ? 'bg-violet-600 hover:bg-violet-700 shadow-violet-500/20' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-500/20'}`}
                         >
-                            应用更改
+                            {affinityMode === 'hard' ? '应用强制绑定' : '应用柔性偏好'}
                         </button>
                     </div>
                 </div>

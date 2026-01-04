@@ -402,10 +402,15 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
     }
   };
 
-  const handleAffinityApply = async (maskString) => {
+  const handleAffinityApply = async (maskString, mode = 'hard', coreIds = []) => {
     if (!affinityModal.process) return;
     try {
-      await invoke('set_process_affinity', { pid: affinityModal.process.pid, affinityMask: maskString });
+      if (mode === 'soft') {
+        const coreIdsArray = Array.isArray(coreIds) ? coreIds : [];
+        await invoke('set_process_cpu_sets', { pid: affinityModal.process.pid, coreIds: coreIdsArray });
+      } else {
+        await invoke('set_process_affinity', { pid: affinityModal.process.pid, affinityMask: maskString });
+      }
       setAffinityModal({ visible: false, process: null });
     } catch (e) {
       console.error("Failed to set affinity:", e);

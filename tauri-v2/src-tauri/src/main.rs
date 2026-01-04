@@ -1,12 +1,14 @@
 //! Task Nexus - Tauri 入口点
-//! 
+//!
 //! 电竞性能优化工具 - Rust 后端
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use task_nexus_lib::{
+    config, governor, hardware, hardware_topology, power, thread, tweaks, AppError,
+};
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use task_nexus_lib::{config, governor, hardware, hardware_topology, power, tweaks, thread, AppError};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -18,7 +20,9 @@ use std::os::windows::process::CommandExt;
 /// 获取 CPU 信息
 #[tauri::command]
 async fn get_cpu_info() -> Result<serde_json::Value, String> {
-    hardware::get_cpu_info().await.map_err(|e: AppError| e.to_string())
+    hardware::get_cpu_info()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 获取 CPU 拓扑
@@ -34,7 +38,9 @@ async fn get_cpu_topology() -> Result<Vec<hardware_topology::LogicalCore>, Strin
 /// 获取进程列表
 #[tauri::command]
 async fn get_processes() -> Result<Vec<task_nexus_lib::ProcessInfo>, String> {
-    governor::get_process_snapshot().await.map_err(|e: AppError| e.to_string())
+    governor::get_process_snapshot()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 设置进程亲和性
@@ -67,8 +73,7 @@ async fn set_process_affinity(
 /// 设置进程优先级
 #[tauri::command]
 async fn set_process_priority(pid: u32, priority: String) -> Result<bool, String> {
-    let level = task_nexus_lib::PriorityLevel::from_str(&priority)
-        .ok_or("无效的优先级")?;
+    let level = task_nexus_lib::PriorityLevel::from_str(&priority).ok_or("无效的优先级")?;
     governor::set_priority(pid, level)
         .await
         .map(|_| true)
@@ -78,13 +83,16 @@ async fn set_process_priority(pid: u32, priority: String) -> Result<bool, String
 /// 清理进程内存
 #[tauri::command]
 async fn trim_process_memory(pid: u32) -> Result<u64, String> {
-    governor::trim_memory(pid).await.map_err(|e: AppError| e.to_string())
+    governor::trim_memory(pid)
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 结束进程
 #[tauri::command]
 async fn terminate_process(pid: u32) -> Result<bool, String> {
-    governor::kill_process(pid).await
+    governor::kill_process(pid)
+        .await
         .map(|_| true)
         .map_err(|e: AppError| e.to_string())
 }
@@ -100,10 +108,10 @@ async fn open_file_location(path: String) -> Result<bool, String> {
         let output = std::process::Command::new("explorer.exe")
             .raw_arg(&select_arg)
             .spawn();
-        
+
         match output {
             Ok(_) => Ok(true),
-            Err(e) => Err(format!("无法打开文件位置: {}", e))
+            Err(e) => Err(format!("无法打开文件位置: {}", e)),
         }
     }
     #[cfg(not(windows))]
@@ -118,8 +126,13 @@ async fn open_file_location(path: String) -> Result<bool, String> {
 
 /// 获取进程的所有线程
 #[tauri::command]
-async fn get_process_threads(pid: u32) -> Result<Vec<thread::ThreadInfo>, String> {
-    thread::get_process_threads(pid).map_err(|e: AppError| e.to_string())
+fn get_process_threads(pid: u32) -> Result<Vec<thread::ThreadInfo>, String> {
+    thread::get_process_threads(pid).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_process_cpu_sets(pid: u32, core_ids: Vec<u32>) -> Result<(), String> {
+    task_nexus_lib::cpu_sets::set_process_cpu_sets(pid, core_ids)
 }
 
 /// 设置线程亲和性
@@ -143,13 +156,17 @@ async fn bind_heaviest_thread(pid: u32, target_core: u32) -> Result<u32, String>
 /// 获取内存信息
 #[tauri::command]
 async fn get_memory_info() -> Result<task_nexus_lib::MemoryInfo, String> {
-    hardware::get_memory_info().await.map_err(|e: AppError| e.to_string())
+    hardware::get_memory_info()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 清理系统内存
 #[tauri::command]
 async fn clear_memory() -> Result<serde_json::Value, String> {
-    governor::clear_system_memory().await.map_err(|e: AppError| e.to_string())
+    governor::clear_system_memory()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 // ============================================================================
@@ -159,19 +176,25 @@ async fn clear_memory() -> Result<serde_json::Value, String> {
 /// 获取当前电源计划
 #[tauri::command]
 async fn get_power_plan() -> Result<serde_json::Value, String> {
-    power::get_current_power_plan().await.map_err(|e: AppError| e.to_string())
+    power::get_current_power_plan()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 设置电源计划
 #[tauri::command]
 async fn set_power_plan(plan: String) -> Result<serde_json::Value, String> {
-    power::set_power_plan(&plan).await.map_err(|e: AppError| e.to_string())
+    power::set_power_plan(&plan)
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 列出所有电源计划
 #[tauri::command]
 async fn list_power_plans() -> Result<serde_json::Value, String> {
-    power::list_power_plans().await.map_err(|e: AppError| e.to_string())
+    power::list_power_plans()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 // ============================================================================
@@ -181,13 +204,17 @@ async fn list_power_plans() -> Result<serde_json::Value, String> {
 /// 获取可用优化项
 #[tauri::command]
 async fn get_tweaks() -> Result<serde_json::Value, String> {
-    tweaks::get_available_tweaks().await.map_err(|e: AppError| e.to_string())
+    tweaks::get_available_tweaks()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 应用优化项
 #[tauri::command]
 async fn apply_tweaks(tweak_ids: Vec<String>) -> Result<serde_json::Value, String> {
-    tweaks::apply_tweaks(&tweak_ids).await.map_err(|e: AppError| e.to_string())
+    tweaks::apply_tweaks(&tweak_ids)
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 // ============================================================================
@@ -197,7 +224,9 @@ async fn apply_tweaks(tweak_ids: Vec<String>) -> Result<serde_json::Value, Strin
 /// 获取应用设置
 #[tauri::command]
 async fn get_settings() -> Result<task_nexus_lib::AppConfig, String> {
-    config::get_config().await.map_err(|e: AppError| e.to_string())
+    config::get_config()
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 设置单项配置
@@ -212,19 +241,41 @@ async fn set_setting(key: String, value: serde_json::Value) -> Result<serde_json
 /// 添加进程策略
 #[tauri::command]
 async fn add_profile(profile: task_nexus_lib::ProcessProfile) -> Result<serde_json::Value, String> {
-    config::add_profile(profile).await.map_err(|e: AppError| e.to_string())
+    config::add_profile(profile)
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 删除进程策略
 #[tauri::command]
 async fn remove_profile(name: String) -> Result<serde_json::Value, String> {
-    config::remove_profile(&name).await.map_err(|e: AppError| e.to_string())
+    config::remove_profile(&name)
+        .await
+        .map_err(|e: AppError| e.to_string())
 }
 
 /// 获取进程策略列表
 #[tauri::command]
 async fn get_profiles() -> Result<Vec<task_nexus_lib::ProcessProfile>, String> {
-    config::get_profiles().await.map_err(|e: AppError| e.to_string())
+    config::get_profiles()
+        .await
+        .map_err(|e: AppError| e.to_string())
+}
+
+/// 导入配置
+#[tauri::command]
+async fn import_config_file(path: String) -> Result<serde_json::Value, String> {
+    config::import_config_from_path(std::path::PathBuf::from(path))
+        .map(|_| serde_json::json!({"success": true}))
+        .map_err(|e: AppError| e.to_string())
+}
+
+/// 导出配置
+#[tauri::command]
+async fn export_config_file(path: String) -> Result<serde_json::Value, String> {
+    config::export_config_to_path(std::path::PathBuf::from(path))
+        .map(|_| serde_json::json!({"success": true}))
+        .map_err(|e: AppError| e.to_string())
 }
 
 // ============================================================================
@@ -284,13 +335,14 @@ pub fn run() {
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
         ))
         .init();
-    
+
     tracing::info!("Task Nexus starting...");
 
     let monitor = std::sync::Arc::new(task_nexus_lib::monitor::ProcessMonitor::new());
     let monitor_clone = monitor.clone();
-    
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
             // 初始化配置
@@ -301,7 +353,7 @@ pub fn run() {
 
             // Start Monitor
             monitor_clone.start(app.handle().clone());
-            
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -312,6 +364,7 @@ pub fn run() {
             get_processes,
             set_affinity,
             set_process_affinity,
+            set_process_cpu_sets,
             set_process_priority,
             trim_process_memory,
             terminate_process,
@@ -336,6 +389,8 @@ pub fn run() {
             add_profile,
             remove_profile,
             get_profiles,
+            import_config_file,
+            export_config_file,
             // 窗口控制
             window_minimize,
             window_toggle_maximize,

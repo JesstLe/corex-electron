@@ -4,21 +4,20 @@
 //! 固定到指定核心以避免缓存失效
 
 use crate::{AppError, AppResult};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[cfg(windows)]
 use windows::Win32::{
     Foundation::{CloseHandle, HANDLE},
     System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next,
-        TH32CS_SNAPTHREAD, THREADENTRY32,
+        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
     },
     System::Threading::{
-        OpenThread, GetThreadTimes, SetThreadAffinityMask,
-        THREAD_QUERY_INFORMATION, THREAD_SET_INFORMATION,
+        GetThreadTimes, OpenThread, SetThreadAffinityMask, THREAD_QUERY_INFORMATION,
+        THREAD_SET_INFORMATION,
     },
 };
 
@@ -38,37 +37,37 @@ pub struct ThreadInfo {
 }
 
 /// 上次采样的线程 CPU 时间缓存
-static THREAD_CPU_CACHE: Lazy<RwLock<HashMap<u32, (u64, std::time::Instant)>>> = 
+static THREAD_CPU_CACHE: Lazy<RwLock<HashMap<u32, (u64, std::time::Instant)>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
 /// 获取进程的所有线程及其 CPU 使用率
 #[cfg(windows)]
 pub fn get_process_threads(pid: u32) -> AppResult<Vec<ThreadInfo>> {
     use std::mem::size_of;
-    
+
     let mut threads = Vec::new();
-    
+
     unsafe {
         // 创建线程快照
         let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
             .map_err(|e| AppError::SystemError(format!("创建线程快照失败: {}", e)))?;
-        
+
         let mut entry = THREADENTRY32 {
             dwSize: size_of::<THREADENTRY32>() as u32,
             ..Default::default()
         };
-        
+
         // 遍历所有线程
         if Thread32First(snapshot, &mut entry).is_ok() {
             loop {
                 // 只处理目标进程的线程
                 if entry.th32OwnerProcessID == pid {
                     let tid = entry.th32ThreadID;
-                    
+
                     // 获取线程 CPU 时间
                     if let Ok(cpu_time) = get_thread_cpu_time(tid) {
                         let cpu_usage = calculate_thread_cpu_usage(tid, cpu_time);
-                        
+
                         threads.push(ThreadInfo {
                             tid,
                             pid,
@@ -78,30 +77,32 @@ pub fn get_process_threads(pid: u32) -> AppResult<Vec<ThreadInfo>> {
                         });
                     }
                 }
-                
+
                 entry.dwSize = size_of::<THREADENTRY32>() as u32;
                 if Thread32Next(snapshot, &mut entry).is_err() {
                     break;
                 }
             }
         }
-        
+
         let _ = CloseHandle(snapshot);
     }
-    
+
     // 标记最重线程
-    if let Some(max_idx) = threads.iter().enumerate()
+    if let Some(max_idx) = threads
+        .iter()
+        .enumerate()
         .max_by(|(_, a), (_, b)| a.cpu_usage.partial_cmp(&b.cpu_usage).unwrap())
-        .map(|(i, _)| i) 
+        .map(|(i, _)| i)
     {
         if threads[max_idx].cpu_usage > 0.1 {
             threads[max_idx].is_heaviest = true;
         }
     }
-    
+
     // 按 CPU 使用率降序排序
     threads.sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap());
-    
+
     Ok(threads)
 }
 
@@ -109,27 +110,27 @@ pub fn get_process_threads(pid: u32) -> AppResult<Vec<ThreadInfo>> {
 #[cfg(windows)]
 fn get_thread_cpu_time(tid: u32) -> AppResult<u64> {
     use windows::Win32::Foundation::FILETIME;
-    
+
     unsafe {
         let handle = OpenThread(THREAD_QUERY_INFORMATION, false, tid)
             .map_err(|e| AppError::SystemError(format!("打开线程失败: {}", e)))?;
-        
+
         let mut creation = FILETIME::default();
         let mut exit = FILETIME::default();
         let mut kernel = FILETIME::default();
         let mut user = FILETIME::default();
-        
+
         let result = GetThreadTimes(handle, &mut creation, &mut exit, &mut kernel, &mut user);
         let _ = CloseHandle(handle);
-        
+
         if result.is_err() {
             return Err(AppError::SystemError("获取线程时间失败".into()));
         }
-        
+
         // 合并 kernel + user 时间
         let kernel_time = ((kernel.dwHighDateTime as u64) << 32) | (kernel.dwLowDateTime as u64);
         let user_time = ((user.dwHighDateTime as u64) << 32) | (user.dwLowDateTime as u64);
-        
+
         // 转换为纳秒 (FILETIME 是 100ns 单位)
         Ok((kernel_time + user_time) * 100)
     }
@@ -139,7 +140,7 @@ fn get_thread_cpu_time(tid: u32) -> AppResult<u64> {
 fn calculate_thread_cpu_usage(tid: u32, current_time: u64) -> f32 {
     let now = std::time::Instant::now();
     let mut cache = THREAD_CPU_CACHE.write();
-    
+
     if let Some((last_time, last_instant)) = cache.get(&tid) {
         let elapsed_ns = now.duration_since(*last_instant).as_nanos() as u64;
         if elapsed_ns > 0 {
@@ -150,7 +151,7 @@ fn calculate_thread_cpu_usage(tid: u32, current_time: u64) -> f32 {
             return usage.min(100.0) as f32;
         }
     }
-    
+
     // 首次采样，记录但返回 0
     cache.insert(tid, (current_time, now));
     0.0
@@ -161,18 +162,19 @@ fn calculate_thread_cpu_usage(tid: u32, current_time: u64) -> f32 {
 pub fn set_thread_affinity(tid: u32, core_mask: u64) -> AppResult<()> {
     unsafe {
         let handle = OpenThread(
-            THREAD_QUERY_INFORMATION | THREAD_SET_INFORMATION, 
-            false, 
-            tid
-        ).map_err(|e| AppError::SystemError(format!("打开线程失败: {}", e)))?;
-        
+            THREAD_QUERY_INFORMATION | THREAD_SET_INFORMATION,
+            false,
+            tid,
+        )
+        .map_err(|e| AppError::SystemError(format!("打开线程失败: {}", e)))?;
+
         let result = SetThreadAffinityMask(handle, core_mask as usize);
         let _ = CloseHandle(handle);
-        
+
         if result == 0 {
             return Err(AppError::SystemError("设置线程亲和性失败".into()));
         }
-        
+
         Ok(())
     }
 }
@@ -181,23 +183,26 @@ pub fn set_thread_affinity(tid: u32, core_mask: u64) -> AppResult<()> {
 #[cfg(windows)]
 pub fn bind_heaviest_thread(pid: u32, target_core: u32) -> AppResult<u32> {
     let threads = get_process_threads(pid)?;
-    
+
     // 找到最重线程
-    let heaviest = threads.iter()
+    let heaviest = threads
+        .iter()
         .find(|t| t.is_heaviest)
         .ok_or_else(|| AppError::SystemError("未找到活跃线程".into()))?;
-    
+
     // 计算核心掩码 (单核心)
     let core_mask = 1u64 << target_core;
-    
+
     // 绑定线程
     set_thread_affinity(heaviest.tid, core_mask)?;
-    
+
     tracing::info!(
-        "帧线程绑定成功: TID:{} -> Core{} (CPU: {:.1}%)", 
-        heaviest.tid, target_core, heaviest.cpu_usage
+        "帧线程绑定成功: TID:{} -> Core{} (CPU: {:.1}%)",
+        heaviest.tid,
+        target_core,
+        heaviest.cpu_usage
     );
-    
+
     Ok(heaviest.tid)
 }
 

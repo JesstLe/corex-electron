@@ -1,5 +1,5 @@
 //! System Tweaks Module
-//! 
+//!
 //! 系统优化功能 - 网络、输入延迟、电源等
 
 use crate::{AppError, AppResult};
@@ -89,7 +89,7 @@ pub async fn get_available_tweaks() -> AppResult<serde_json::Value> {
             safe: true,
         },
     ];
-    
+
     Ok(serde_json::to_value(tweaks).unwrap())
 }
 
@@ -97,23 +97,21 @@ pub async fn get_available_tweaks() -> AppResult<serde_json::Value> {
 #[cfg(windows)]
 pub async fn apply_tweaks(tweak_ids: &[String]) -> AppResult<serde_json::Value> {
     use std::process::Command;
-    
+
     let tweak_ids = tweak_ids.to_vec();
-    
+
     tokio::task::spawn_blocking(move || {
         let all_tweaks = get_tweaks_map();
         let mut success_count = 0;
         let mut errors: Vec<String> = Vec::new();
-        
+
         for id in &tweak_ids {
             if let Some(tweak) = all_tweaks.get(id.as_str()) {
                 tracing::info!("Applying tweak: {} ({})", tweak.name, tweak.command);
-                
+
                 // 使用 cmd /c 执行命令
-                let output = Command::new("cmd")
-                    .args(["/c", &tweak.command])
-                    .output();
-                
+                let output = Command::new("cmd").args(["/c", &tweak.command]).output();
+
                 match output {
                     Ok(out) if out.status.success() => {
                         success_count += 1;
@@ -128,7 +126,7 @@ pub async fn apply_tweaks(tweak_ids: &[String]) -> AppResult<serde_json::Value> 
                 }
             }
         }
-        
+
         Ok(serde_json::json!({
             "success": errors.is_empty(),
             "applied": success_count,
@@ -147,25 +145,31 @@ pub async fn apply_tweaks(_tweak_ids: &[String]) -> AppResult<serde_json::Value>
 /// 获取优化项映射
 fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
     let mut map = std::collections::HashMap::new();
-    
-    map.insert("disable_hpet", TweakInfo {
-        id: "disable_hpet".to_string(),
-        category: "Input".to_string(),
-        name: "禁用 HPET".to_string(),
-        desc: "".to_string(),
-        command: "bcdedit /deletevalue useplatformclock".to_string(),
-        safe: true,
-    });
-    
-    map.insert("disable_dynamic_tick", TweakInfo {
-        id: "disable_dynamic_tick".to_string(),
-        category: "Input".to_string(),
-        name: "禁用动态时钟".to_string(),
-        desc: "".to_string(),
-        command: "bcdedit /set disabledynamictick yes".to_string(),
-        safe: true,
-    });
-    
+
+    map.insert(
+        "disable_hpet",
+        TweakInfo {
+            id: "disable_hpet".to_string(),
+            category: "Input".to_string(),
+            name: "禁用 HPET".to_string(),
+            desc: "".to_string(),
+            command: "bcdedit /deletevalue useplatformclock".to_string(),
+            safe: true,
+        },
+    );
+
+    map.insert(
+        "disable_dynamic_tick",
+        TweakInfo {
+            id: "disable_dynamic_tick".to_string(),
+            category: "Input".to_string(),
+            name: "禁用动态时钟".to_string(),
+            desc: "".to_string(),
+            command: "bcdedit /set disabledynamictick yes".to_string(),
+            safe: true,
+        },
+    );
+
     map.insert("optimize_keyboard", TweakInfo {
         id: "optimize_keyboard".to_string(),
         category: "Input".to_string(),
@@ -174,7 +178,7 @@ fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
         command: r#"reg add "HKCU\Control Panel\Keyboard" /v KeyboardDelay /t REG_SZ /d "0" /f && reg add "HKCU\Control Panel\Keyboard" /v KeyboardSpeed /t REG_SZ /d "31" /f"#.to_string(),
         safe: true,
     });
-    
+
     map.insert("disable_mouse_accel", TweakInfo {
         id: "disable_mouse_accel".to_string(),
         category: "Input".to_string(),
@@ -183,7 +187,7 @@ fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
         command: r#"reg add "HKCU\Control Panel\Mouse" /v MouseSpeed /t REG_SZ /d "0" /f && reg add "HKCU\Control Panel\Mouse" /v MouseThreshold1 /t REG_SZ /d "0" /f && reg add "HKCU\Control Panel\Mouse" /v MouseThreshold2 /t REG_SZ /d "0" /f"#.to_string(),
         safe: true,
     });
-    
+
     map.insert("tcp_nodelay", TweakInfo {
         id: "tcp_nodelay".to_string(),
         category: "Network".to_string(),
@@ -192,7 +196,7 @@ fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
         command: "netsh int tcp set global nagle=disabled && netsh int tcp set global autotuninglevel=normal".to_string(),
         safe: true,
     });
-    
+
     map.insert("network_throttling_disable", TweakInfo {
         id: "network_throttling_disable".to_string(),
         category: "Network".to_string(),
@@ -201,7 +205,7 @@ fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
         command: r#"reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile" /v NetworkThrottlingIndex /t REG_DWORD /d 0xffffffff /f"#.to_string(),
         safe: true,
     });
-    
+
     map.insert("disable_game_bar", TweakInfo {
         id: "disable_game_bar".to_string(),
         category: "System".to_string(),
@@ -210,7 +214,7 @@ fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
         command: r#"reg add "HKCU\System\GameConfigStore" /v GameDVR_Enabled /t REG_DWORD /d 0 /f && reg add "HKLM\SOFTWARE\Policies\Microsoft\Windows\GameDVR" /v AllowGameDVR /t REG_DWORD /d 0 /f"#.to_string(),
         safe: true,
     });
-    
+
     map.insert("disable_power_throttling", TweakInfo {
         id: "disable_power_throttling".to_string(),
         category: "System".to_string(),
@@ -219,6 +223,6 @@ fn get_tweaks_map() -> std::collections::HashMap<&'static str, TweakInfo> {
         command: r#"reg add "HKLM\SYSTEM\CurrentControlSet\Control\Power\PowerThrottling" /v PowerThrottlingOff /t REG_DWORD /d 1 /f"#.to_string(),
         safe: true,
     });
-    
+
     map
 }

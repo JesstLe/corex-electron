@@ -76,6 +76,8 @@ function App() {
         setError(err.message || '初始化失败');
       } finally {
         setLoading(false);
+        // Trigger initial scan to populate process list for Settings panel
+        handleScan();
       }
     }
     init();

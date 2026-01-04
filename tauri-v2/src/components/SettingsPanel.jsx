@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Zap, Lock, Scale, Leaf, ChevronDown, Trash2, HardDrive, RefreshCw, Download, Upload } from 'lucide-react';
+import { Zap, Lock, Scale, Leaf, ChevronDown, Trash2, HardDrive, RefreshCw, Download, Upload, Settings } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { save, open } from '@tauri-apps/plugin-dialog';
 
 // 内存清理组件
 function MemoryCleaner() {
@@ -8,29 +10,27 @@ function MemoryCleaner() {
   const [result, setResult] = useState(null);
 
   const fetchMemInfo = async () => {
-    if (window.electron?.getMemoryInfo) {
-      const info = await window.electron.getMemoryInfo();
-      setMemInfo(info);
+    try {
+      const info = await invoke('get_memory_info');
+      if (info) setMemInfo(info);
+    } catch (e) {
+      console.error(e);
     }
   };
 
   useEffect(() => {
     fetchMemInfo();
-    // Removed: 5-second polling was causing excessive subprocess spawning
-    // Memory info now only updates on component mount and after clear
   }, []);
 
   const handleClear = async () => {
     setCleaning(true);
     setResult(null);
     try {
-      if (window.electron?.clearMemory) {
-        const res = await window.electron.clearMemory();
-        setResult(res);
-        await fetchMemInfo();
-      }
+      await invoke('clear_memory');
+      setResult({ success: true, message: '系统内存已清理' });
+      await fetchMemInfo();
     } catch (e) {
-      setResult({ success: false, message: '清理失败' });
+      setResult({ success: false, message: '清理失败: ' + e });
     }
     setCleaning(false);
   };
@@ -91,20 +91,22 @@ function PowerPlanControl() {
   const [loading, setLoading] = useState(false);
 
   const fetchPlans = async () => {
-    if (window.electron?.listPowerPlans && window.electron?.getPowerPlan) {
-      const listRes = await window.electron.listPowerPlans();
-      const currentRes = await window.electron.getPowerPlan();
+    try {
+      const listRes = await invoke('list_power_plans');
+      const currentRes = await invoke('get_power_plan');
 
-      if (listRes.success) setPlans(listRes.plans);
-      if (currentRes.success) setCurrentPlanGuid(currentRes.guid);
+      // Backend returns { success: true, plans: [...], guid: ... } structure depending on implementation
+      // Assuming straightforward object returns
+      if (listRes && listRes.plans) setPlans(listRes.plans);
+      if (currentRes && currentRes.guid) setCurrentPlanGuid(currentRes.guid);
+    } catch (e) {
+      console.error(e);
     }
   };
 
   useEffect(() => {
     fetchPlans();
-    // 监听更新事件 (由 DropZone 触发)
     window.addEventListener('power-plan-update', fetchPlans);
-    // Removed: 10-second polling was spawning PowerShell repeatedly
     return () => {
       window.removeEventListener('power-plan-update', fetchPlans);
     }
@@ -112,23 +114,12 @@ function PowerPlanControl() {
 
   const switchPlan = async (guid) => {
     setLoading(true);
-    if (window.electron?.setPowerPlan) {
-      // 通过 GUID 找到名称 (用于兼容 setPowerPlan 接口)
-      const plan = plans.find(p => p.guid === guid);
-      // 注意：现有的 set-power-plan IPC 可能只支持预置名称，需要更新或直接传 GUID
-      // 这里假设 IPC 已经被修改为支持 GUID 或者名称
-      // 为了安全，我们传递名称如果在预置列表中，或者扩展 IPC
-
-      // 实际上之前的 set-power-plan 只支持固定名称。
-      // 我们需要修改后端 IPC 吗？查看之前代码，set-power-plan 需要 planName 查表。
-      // 这意味着如果你导入了新计划，旧 IPC 无法切换。
-      // 为了支持新计划，我们需要一个新的 IPC 'set-power-plan-guid' 或者修改现有的。
-      // 这里为了最小修改，我们传递 key 如果是预置的，否则... 问题来了。
-
-      // 让我们假设我们将在下一步修改后端 set-power-plan 接受 GUID。
-      // 先传递 GUID 试试，并在后端做兼容。
-      await window.electron.setPowerPlan(guid);
-      await fetchPlans();
+    try {
+      await invoke('set_power_plan', { plan: guid });
+      setCurrentPlanGuid(guid);
+    } catch (e) {
+      console.error(e);
+      alert('切换电源计划失败: ' + e);
     }
     setLoading(false);
   };
@@ -542,6 +533,7 @@ export default function SettingsPanel({
     { id: 'dynamic', label: 'T mode1', icon: Zap },
     { id: 'd2', label: 'T mode2', icon: Scale, note: '笔记本可用' },
     { id: 'd3', label: 'T mode3', icon: Zap },
+    { id: 'custom', label: '自定义', icon: Settings, note: '占位' },
   ];
 
   return (
@@ -800,30 +792,45 @@ export default function SettingsPanel({
           <div className="pt-4 border-t border-slate-100 flex gap-3">
             <button
               onClick={async () => {
-                const res = await window.electron.exportConfig();
-                if (res.success) {
-                  // Ideally show toast
-                  console.log('Export success', res.filePath);
+                if (!confirm("导入配置将覆盖当前的核心调优设置 (Profiles, SmartTrim, ProBalance 等)，确定继续吗？")) return;
+                try {
+                  const path = await open({
+                    filters: [{ name: 'JSON Config', extensions: ['json'] }],
+                  });
+                  if (!path) return;
+
+                  await invoke('import_config_file', { path });
+                  alert("配置导入成功，即将刷新页面");
+                  window.location.reload();
+                } catch (e) {
+                  console.error(e);
+                  alert("导入失败: " + e);
                 }
               }}
               className="flex-1 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
             >
               <Download size={16} />
-              导出配置
+              导入配置
             </button>
             <button
               onClick={async () => {
-                if (!confirm("导入配置将覆盖当前的核心调优设置 (Profiles, SmartTrim, ProBalance 等)，确定继续吗？")) return;
-                const res = await window.electron.importConfig();
-                if (res.success) {
-                  console.log('Import success');
-                  window.location.reload(); // Reload to apply all settings
+                try {
+                  const path = await save({
+                    filters: [{ name: 'JSON Config', extensions: ['json'] }],
+                    defaultPath: 'task-nexus-config.json',
+                  });
+                  if (!path) return;
+                  await invoke('export_config_file', { path });
+                  alert("配置导出成功");
+                } catch (e) {
+                  console.error(e);
+                  alert("导出失败: " + e);
                 }
               }}
               className="flex-1 px-4 py-2 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 text-sm font-medium transition-colors flex items-center justify-center gap-2"
             >
               <Upload size={16} />
-              导入配置
+              导出配置
             </button>
           </div>
         </div>
