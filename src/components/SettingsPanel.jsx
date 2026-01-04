@@ -16,8 +16,8 @@ function MemoryCleaner() {
 
   useEffect(() => {
     fetchMemInfo();
-    const interval = setInterval(fetchMemInfo, 5000);
-    return () => clearInterval(interval);
+    // Removed: 5-second polling was causing excessive subprocess spawning
+    // Memory info now only updates on component mount and after clear
   }, []);
 
   const handleClear = async () => {
@@ -104,10 +104,9 @@ function PowerPlanControl() {
     fetchPlans();
     // 监听更新事件 (由 DropZone 触发)
     window.addEventListener('power-plan-update', fetchPlans);
-    const interval = setInterval(fetchPlans, 10000); // 兜底轮询
+    // Removed: 10-second polling was spawning PowerShell repeatedly
     return () => {
       window.removeEventListener('power-plan-update', fetchPlans);
-      clearInterval(interval);
     }
   }, []);
 
