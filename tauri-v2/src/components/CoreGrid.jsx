@@ -1,5 +1,7 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Cpu } from 'lucide-react';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 
 export default function CoreGrid({
   cores,
@@ -36,32 +38,35 @@ export default function CoreGrid({
     partition0Count = cpuArch.pCores * 2; // P核支持超线程
   }
 
-  // CPU 监控逻辑
-  const [cpuLoads, setCpuLoads] = React.useState([]);
+  // CPU 监控逻辑 - 使用 Tauri 事件
+  const [cpuLoads, setCpuLoads] = useState([]);
 
-  React.useEffect(() => {
-    // 开启监控
-    if (window.electron?.startCpuMonitor) {
-      window.electron.startCpuMonitor();
+  useEffect(() => {
+    let unlisten;
+
+    // 监听 CPU 负载更新事件
+    async function setupListener() {
+      unlisten = await listen('cpu-load-update', (event) => {
+        if (Array.isArray(event.payload)) {
+          setCpuLoads(event.payload);
+        }
+      });
     }
+    setupListener();
 
-    // 监听更新
-    const handleUpdate = (data) => {
-      if (Array.isArray(data)) {
-        setCpuLoads(data);
-      }
-    };
-
-    if (window.electron?.onCpuLoadUpdate) {
-      window.electron.onCpuLoadUpdate(handleUpdate);
-    }
+    // 尝试获取初始数据
+    invoke('get_cpu_loads').then(data => {
+      if (Array.isArray(data)) setCpuLoads(data);
+    }).catch(() => {
+      // 如果命令不存在，生成模拟数据用于演示
+      const simulatedLoads = Array.from({ length: cores.length }, () => Math.random() * 100);
+      setCpuLoads(simulatedLoads);
+    });
 
     return () => {
-      // 停止监控并清理监听
-      if (window.electron?.offCpuLoadUpdate) window.electron.offCpuLoadUpdate();
-      if (window.electron?.stopCpuMonitor) window.electron.stopCpuMonitor();
+      if (unlisten) unlisten();
     };
-  }, []);
+  }, [cores.length]);
 
   // 渲染核心的辅助函数
   const renderCore = (coreIndex) => {

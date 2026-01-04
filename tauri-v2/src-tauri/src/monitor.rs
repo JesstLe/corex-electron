@@ -70,8 +70,12 @@ impl ProcessMonitor {
                     // Actually sysinfo process struct doesn't expose thread count directly in simple way?
                     // It has `tasks` but often None on Windows.
                     
+                    // Get parent PID for tree view
+                    let parent_pid = process.parent().map(|p| p.as_u32());
+                    
                     processes.push(ProcessInfo {
                         pid: pid_u32,
+                        parent_pid,
                         name,
                         cpu_usage,
                         memory_usage,

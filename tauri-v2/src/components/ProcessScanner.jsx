@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
-import { Search, CheckSquare, Square, Zap, XCircle, ChevronRight, Cpu, Play, Pause, ArrowUp, ArrowDown } from 'lucide-react';
+import { Search, CheckSquare, Square, Zap, XCircle, ChevronRight, ChevronDown, Cpu, Play, Pause, ArrowUp, ArrowDown, Activity, GitBranch } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -31,18 +31,24 @@ const formatTime = (seconds) => {
 
 // -- Mini Graph --
 const MiniGraph = ({ data, color, height = 40, width = 100 }) => {
-  if (!data || data.length < 2) return <div style={{ height, width }} className="bg-slate-50/50 rounded" />;
+  // Show placeholder if no data at all
+  if (!data || data.length === 0) {
+    return <div style={{ height, width }} className="bg-slate-50/50 rounded border border-slate-100" />;
+  }
+
+  // For single data point, duplicate it to draw a flat line
+  const graphData = data.length === 1 ? [data[0], data[0]] : data;
   const max = 100;
-  const points = data.map((val, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = height - (val / max) * height;
+  const points = graphData.map((val, i) => {
+    const x = (i / (graphData.length - 1)) * width;
+    const y = height - ((val || 0) / max) * height;
     return `${x},${y}`;
   }).join(' ');
 
   return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-hidden bg-slate-50/50 rounded border border-slate-100" preserveAspectRatio="none">
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-hidden bg-slate-50/50 rounded border border-slate-100" preserveAspectRatio="none">
       <polyline fill="none" stroke={color} strokeWidth="1.5" points={points} vectorEffect="non-scaling-stroke" />
-      <path d={`M0,${height} L${points.split(' ')[0]} ${points} L${width},${height} Z`} fill={color} fillOpacity="0.1" />
+      <path d={`M0,${height} L${points.split(' ')[0]} ${points} L${width},${height} Z`} fill={color} fillOpacity="0.15" />
     </svg>
   );
 };
@@ -140,11 +146,10 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
           label="CPU 亲和性 (Affinity)"
           icon={Cpu}
           subMenu={
-            <>
-              <ContextMenuItem label="所有核心 (All)" onClick={() => { onAction('set_affinity', { pid: process.pid, coreMask: '-1', mode: 'manual', primaryCore: null }); onClose(); }} />
-              <ContextMenuItem label="仅 P-Cores" onClick={() => { onAction('set_affinity', { pid: process.pid, coreMask: 'p-cores', mode: 'manual', primaryCore: null }); onClose(); }} />
-              <ContextMenuItem label="仅 E-Cores" onClick={() => { onAction('set_affinity', { pid: process.pid, coreMask: 'e-cores', mode: 'manual', primaryCore: null }); onClose(); }} />
-            </>
+            <AffinitySelector
+              process={process}
+              onApply={(mask) => { onAction('set_affinity', { pid: process.pid, coreMask: mask, mode: 'manual', primaryCore: null }); onClose(); }}
+            />
           }
         />
         <div className="my-1 border-t border-slate-100"></div>
@@ -154,10 +159,70 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
   );
 };
 
+// -- Affinity Selector --
+const AffinitySelector = ({ process, onApply }) => {
+  const coreCount = navigator.hardwareConcurrency || 16;
+  // Initialize mask from process.cpu_affinity which is a hex string e.g., "0xffff" or "All"
+  // Note: This is an approximation. A robust solution would parse the backend hex string.
+  // For now, we default to all selected if parsing fails or is "All".
+  const initialMask = useMemo(() => {
+    if (!process.cpu_affinity || process.cpu_affinity === 'All') return (BigInt(1) << BigInt(coreCount)) - BigInt(1);
+    try {
+      return BigInt(process.cpu_affinity);
+    } catch {
+      return (BigInt(1) << BigInt(coreCount)) - BigInt(1);
+    }
+  }, [process.cpu_affinity, coreCount]);
+
+  const [selectedMask, setSelectedMask] = useState(initialMask);
+
+  const toggleCore = (coreIndex) => {
+    const bit = BigInt(1) << BigInt(coreIndex);
+    if ((selectedMask & bit) !== BigInt(0)) {
+      setSelectedMask(selectedMask & ~bit);
+    } else {
+      setSelectedMask(selectedMask | bit);
+    }
+  };
+
+  const isSelected = (coreIndex) => {
+    return (selectedMask & (BigInt(1) << BigInt(coreIndex))) !== BigInt(0);
+  };
+
+  return (
+    <div className="p-2 w-64">
+      <div className="flex justify-between items-center mb-2">
+        <span className="text-xs font-bold text-slate-500">CPU Cores ({coreCount})</span>
+        <div className="flex gap-1">
+          <button onClick={() => setSelectedMask((BigInt(1) << BigInt(coreCount)) - BigInt(1))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">All</button>
+          <button onClick={() => setSelectedMask(BigInt(0))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">Clear</button>
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-1 mb-2 max-h-48 overflow-y-auto">
+        {Array.from({ length: coreCount }).map((_, i) => (
+          <button
+            key={i}
+            onClick={(e) => { e.stopPropagation(); toggleCore(i); }}
+            className={`h-8 rounded text-[10px] font-mono transition-colors ${isSelected(i) ? 'bg-violet-500 text-white shadow-sm' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+          >
+            {i}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => onApply(selectedMask.toString())}
+        className="w-full py-1 bg-violet-600 text-white text-xs rounded hover:bg-violet-700 transition-colors shadow-sm"
+      >
+        Apply Affinity
+      </button>
+    </div>
+  );
+};
+
 // Updated Grid Columns Definition to prevent shrinkage and cutting off
 // Form: [Selection] [Name] [User] [PID] [Pri] [Aff] [CPU] [Mem] [Path]
 // Use minmax for essential columns
-const GRID_COLS_CLASS = "grid grid-cols-[30px_minmax(180px,2fr)_minmax(80px,1fr)_60px_80px_100px_80px_80px_minmax(150px,2fr)]";
+const GRID_COLS_CLASS = "grid grid-cols-[30px_minmax(180px,2fr)_minmax(80px,1fr)_60px_80px_100px_80px_80px_minmax(250px,3fr)]";
 
 export default function ProcessScanner({ selectedPid, onSelect, onScan, selectedPids, setSelectedPids }) {
   const [processes, setProcesses] = useState([]);
@@ -166,6 +231,11 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
   const [sortConfig, setSortConfig] = useState({ key: 'cpu', direction: 'desc' });
   const [history, setHistory] = useState({ cpu: [], memory: [] });
   const [loading, setLoading] = useState(true);
+
+  // New States: Active Filter & Tree View
+  const [showActiveOnly, setShowActiveOnly] = useState(false);
+  const [treeViewMode, setTreeViewMode] = useState(false);
+  const [expandedPids, setExpandedPids] = useState(new Set());
 
   // Pause State
   const [isPaused, setIsPaused] = useState(false);
@@ -219,12 +289,18 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
     });
   }, [processes, isPaused]);
 
-  // Sort & Filter
+  // Sort & Filter (with Active Filter support)
   const sortedProcesses = useMemo(() => {
     let filtered = processes;
+
+    // Active process filter (CPU > 0.1%)
+    if (showActiveOnly) {
+      filtered = filtered.filter(p => (p.cpu_usage || 0) > 0.1);
+    }
+
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = processes.filter(p =>
+      filtered = filtered.filter(p =>
         p.name.toLowerCase().includes(term) ||
         p.pid.toString().includes(term) ||
         (p.user && p.user.toLowerCase().includes(term))
@@ -246,12 +322,58 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
       if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
       return 0;
     });
-  }, [processes, searchTerm, sortConfig]);
+  }, [processes, searchTerm, sortConfig, showActiveOnly]);
+
+  // Build Process Tree (for tree view mode)
+  const processTreeData = useMemo(() => {
+    if (!treeViewMode) return sortedProcesses.map(p => ({ ...p, depth: 0, hasChildren: false }));
+
+    const pidSet = new Set(processes.map(p => p.pid));
+    const childMap = new Map(); // parent_pid -> children[]
+    const roots = [];
+
+    sortedProcesses.forEach(p => {
+      const ppid = p.parent_pid;
+      if (ppid && pidSet.has(ppid) && ppid !== p.pid) {
+        if (!childMap.has(ppid)) childMap.set(ppid, []);
+        childMap.get(ppid).push(p);
+      } else {
+        roots.push(p);
+      }
+    });
+
+    // Flatten tree with depth info
+    const result = [];
+    const flatten = (node, depth) => {
+      const children = childMap.get(node.pid) || [];
+      const hasChildren = children.length > 0;
+      const isExpanded = expandedPids.has(node.pid);
+
+      result.push({ ...node, depth, hasChildren, isExpanded });
+
+      if (hasChildren && isExpanded) {
+        children.forEach(child => flatten(child, depth + 1));
+      }
+    };
+
+    roots.forEach(root => flatten(root, 0));
+    return result;
+  }, [sortedProcesses, treeViewMode, expandedPids, processes]);
+
+  // Toggle tree node expand/collapse
+  const toggleExpand = (pid) => {
+    setExpandedPids(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(pid)) newSet.delete(pid);
+      else newSet.add(pid);
+      return newSet;
+    });
+  };
 
   // Virtualizer
   const parentRef = useRef(null);
   const rowVirtualizer = useVirtualizer({
-    count: sortedProcesses.length,
+    count: processTreeData.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 35, // Row height
     overscan: 5,
@@ -297,7 +419,7 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
   );
 
   return (
-    <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col h-[600px] overflow-hidden bg-white/50 backdrop-blur-md">
+    <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col flex-1 min-h-[300px] max-h-[600px] overflow-hidden bg-white/50 backdrop-blur-md">
       {/* Metrics Header - Responsive Flex-Wrap */}
       <div className="min-h-20 bg-white/60 border-b border-slate-200 flex flex-wrap items-center gap-4 px-4 py-2">
         {/* ... Mini Graphs ... */}
@@ -323,11 +445,33 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
         </div>
 
         {/* Search & Control - Auto expand or wrap */}
-        <div className="flex-1 flex items-center justify-end gap-2 min-w-[180px]">
-          <div className="relative w-full max-w-[300px]">
+        <div className="flex-1 flex items-center justify-end gap-2 min-w-[220px]">
+          <div className="relative w-full max-w-[200px]">
             <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
             <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search..." className="w-full pl-8 pr-2 py-1.5 bg-slate-100 rounded-lg text-xs outline-none focus:ring-1 focus:ring-violet-500" />
           </div>
+
+          {/* Active Process Filter */}
+          <button
+            onClick={() => setShowActiveOnly(!showActiveOnly)}
+            className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 ${showActiveOnly ? 'bg-green-100 text-green-600 hover:bg-green-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+            title={showActiveOnly ? "Showing Active Only" : "Show All Processes"}
+          >
+            <Activity size={12} />
+            活动
+          </button>
+
+          {/* Tree View Toggle */}
+          <button
+            onClick={() => setTreeViewMode(!treeViewMode)}
+            className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1 ${treeViewMode ? 'bg-violet-100 text-violet-600 hover:bg-violet-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+            title={treeViewMode ? "Tree View On" : "Flat View"}
+          >
+            <GitBranch size={12} />
+            树
+          </button>
+
+          {/* Pause Button */}
           <button
             onClick={() => setIsPaused(!isPaused)}
             className={`p-1.5 rounded-lg transition-colors ${isPaused ? 'bg-orange-100 text-orange-600 hover:bg-orange-200' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
@@ -352,10 +496,10 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
         </div>
 
         {/* Virtual Table Body */}
-        <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-hidden font-mono text-xs relative">
+        <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-xs relative">
           <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, width: '100%', minWidth: '800px', position: 'relative' }}>
             {rowVirtualizer.getVirtualItems().map((virtualRow) => {
-              const p = sortedProcesses[virtualRow.index];
+              const p = processTreeData[virtualRow.index];
               const active = isSelected(p.pid);
               return (
                 <div
@@ -380,7 +524,23 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
                   </div>
 
                   <Cell className="font-semibold text-slate-700" onClick={() => toggleSelect(p.pid)}>
-                    <img src="https://img.icons8.com/color/48/console.png" className="w-4 h-4 mr-2 opacity-80" alt="" />
+                    {/* Tree Indentation */}
+                    {treeViewMode && p.depth > 0 && (
+                      <span style={{ width: p.depth * 16 }} className="inline-block" />
+                    )}
+                    {/* Expand/Collapse Icon */}
+                    {treeViewMode && p.hasChildren && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleExpand(p.pid); }}
+                        className="mr-1 text-slate-400 hover:text-slate-600"
+                      >
+                        {p.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                      </button>
+                    )}
+                    {treeViewMode && !p.hasChildren && p.depth > 0 && (
+                      <span className="w-3 inline-block" />
+                    )}
+                    <img src="https://img.icons8.com/color/48/console.png" className="w-4 h-4 mr-2 opacity-80 inline-block" alt="" />
                     {p.name}
                   </Cell>
 

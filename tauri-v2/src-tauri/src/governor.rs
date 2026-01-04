@@ -66,8 +66,12 @@ pub async fn get_process_snapshot() -> AppResult<Vec<ProcessInfo>> {
             // Record CPU time for incremental calc (legacy)
             new_cpu_times.insert(pid_u32, (process.run_time(), 0));
             
+            // Parent PID for tree view
+            let parent_pid = process.parent().map(|p| p.as_u32());
+            
             processes.push(ProcessInfo {
                 pid: pid_u32,
+                parent_pid,
                 name,
                 cpu_usage,
                 memory_usage: memory, // map memory -> memory_usage

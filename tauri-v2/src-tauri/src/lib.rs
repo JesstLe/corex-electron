@@ -25,6 +25,8 @@ pub fn decode_output(bytes: &[u8]) -> String {
 pub struct ProcessInfo {
     /// 进程 ID
     pub pid: u32,
+    /// 父进程 ID (用于树形视图)
+    pub parent_pid: Option<u32>,
     /// 进程名称
     pub name: String,
     /// CPU 使用率 (0.0 - 100.0)
