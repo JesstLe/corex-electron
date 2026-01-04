@@ -391,8 +391,8 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
                 continue;
             }
             
-            // 只清理内存 > 20MB 的进程
-            if process.memory() < 20 * 1024 * 1024 {
+            // 只清理内存 > 50MB 的进程 (与 JS 版本一致)
+            if process.memory() < 50 * 1024 * 1024 {
                 continue;
             }
             
@@ -433,13 +433,21 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
 }
 
 /// 同步版本的内存清理 (内部使用)
+/// 返回 Ok(1) 表示成功清理一个进程，Err 表示失败
 #[cfg(windows)]
 fn trim_memory_sync(pid: u32) -> Result<u64, ()> {
     unsafe {
+        // 需要 PROCESS_SET_QUOTA 权限来调用 EmptyWorkingSet
         let handle = OpenProcess(PROCESS_SET_QUOTA, false, pid).ok().ok_or(())?;
         let result = EmptyWorkingSet(handle);
         let _ = CloseHandle(handle);
-        result.ok().map(|_| 0).ok_or(())
+        
+        // 返回 1 表示成功执行了一次清理
+        if result.is_ok() {
+            Ok(1)
+        } else {
+            Err(())
+        }
     }
 }
 
