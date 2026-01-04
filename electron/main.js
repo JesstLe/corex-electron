@@ -148,6 +148,16 @@ function loadConfig() {
       if (!Array.isArray(appConfig.profiles)) {
         appConfig.profiles = [];
       }
+
+      // 自动合并默认游戏列表（确保新版本添加的游戏也能生效）
+      if (Array.isArray(DEFAULT_CONFIG.gameList)) {
+        const existingGames = new Set((appConfig.gameList || []).map(g => g.toLowerCase()));
+        DEFAULT_CONFIG.gameList.forEach(game => {
+          if (!existingGames.has(game.toLowerCase())) {
+            appConfig.gameList.push(game);
+          }
+        });
+      }
     }
   } catch (error) {
     console.error('加载配置文件失败:', error);
