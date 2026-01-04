@@ -671,10 +671,15 @@ function getProcessesList(options = { includePriority: true }) {
             // Apply Path
             if (options.includePath) {
               p.path = pathMap[p.pid] || '';
-              p.version = ''; // Placeholder if needed
+              p.version = '';
             }
           });
 
+          resolve(processes);
+        }).catch(err => {
+          // If secondary queries fail, still return base process list with default priority
+          writeLog('WARN', `[getProcessesList] Secondary queries failed: ${err.message}`);
+          processes.forEach(p => { p.priority = 'Normal'; });
           resolve(processes);
         });
 

@@ -86,6 +86,9 @@ function App() {
   }, [selectedCores, primaryCore]);
 
   const handleScan = async () => {
+    // Prevent concurrent scans - if already scanning, do nothing
+    if (scanning) return;
+
     setScanning(true);
     setError(null);
     try {
@@ -187,7 +190,7 @@ function App() {
 
     // 优先核心必须在已选择的核心中
     let coresToUse = [...selectedCores];
-    
+
     // 如果指定了优先核心，验证它是否在已选择的核心中
     let primaryCoreValue = null;
     if (primaryCore !== 'auto') {
@@ -255,7 +258,7 @@ function App() {
 
     // 优先核心必须在已选择的核心中
     let coresToUse = [...selectedCores];
-    
+
     // 验证优先核心
     let primaryCoreValue = null;
     if (primaryCore !== 'auto') {
