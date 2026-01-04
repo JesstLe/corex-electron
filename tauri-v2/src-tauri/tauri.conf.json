@@ -26,10 +26,7 @@
         "security": {
             "csp": null
         },
-        "trayIcon": {
-            "iconPath": "icons/icon.png",
-            "iconAsTemplate": false
-        }
+        "trayIcon": null
     },
     "bundle": {
         "active": false,

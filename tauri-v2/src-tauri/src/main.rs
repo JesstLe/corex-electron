@@ -222,11 +222,9 @@ pub fn run() {
         .setup(|app| {
             // 初始化配置
             let app_handle = app.handle();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = config::init_config(app_handle) {
-                    tracing::error!("Failed to init config: {}", e);
-                }
-            });
+            if let Err(e) = config::init_config(app_handle) {
+                tracing::error!("Failed to init config: {}", e);
+            }
             
             Ok(())
         })
