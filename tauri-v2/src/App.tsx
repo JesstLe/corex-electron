@@ -333,7 +333,7 @@ function App() {
             <ToastContainer toasts={toasts} removeToast={removeToast} />
 
             <div className="flex-1 min-h-0 p-4 md:p-6 overflow-y-auto">
-                <div className="max-w-6xl mx-auto flex flex-col space-y-4 min-h-full">
+                <div className="max-w-6xl mx-auto flex flex-col space-y-6">
                     {activeTab === 'dashboard' && (
                         <>
                             <ProcessScanner

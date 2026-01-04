@@ -378,7 +378,7 @@ export default function ProcessScanner({
     };
 
     return (
-        <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col flex-1 min-h-[400px] overflow-hidden bg-white/50 backdrop-blur-md">
+        <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col min-h-[400px] max-h-[600px] overflow-hidden bg-white/50 backdrop-blur-md">
             <div className="min-h-20 bg-white/60 border-b border-slate-200 flex flex-wrap items-center gap-4 px-4 py-2">
                 <div className="flex flex-col min-w-[100px]">
                     <div className="text-[10px] uppercase font-bold text-slate-400">处理器占用</div>
