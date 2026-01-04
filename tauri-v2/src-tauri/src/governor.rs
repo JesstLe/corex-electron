@@ -416,7 +416,11 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
             "success": true,
             "freedMB": freed_mb,
             "processesTrimed": trimmed_count,
-            "message": format!("已优化 {} 个进程", trimmed_count)
+            "message": if freed_mb > 0 { 
+                format!("已释放 {} MB 内存", freed_mb) 
+            } else { 
+                "内存已优化".to_string() 
+            }
         }))
     })
     .await

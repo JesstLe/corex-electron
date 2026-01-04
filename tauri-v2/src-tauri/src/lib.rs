@@ -8,6 +8,7 @@ pub mod tweaks;
 pub mod monitor;
 pub mod watchdog;
 pub mod thread;
+pub mod hardware_topology;
 
 use serde::{Deserialize, Serialize};
 

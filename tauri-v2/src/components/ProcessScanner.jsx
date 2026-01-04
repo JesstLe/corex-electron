@@ -88,7 +88,7 @@ const ContextMenuItem = ({ label, icon: Icon, shortcut, subMenu, onClick, danger
       </button>
 
       {subMenu && showSub && (
-        <div className="absolute left-full top-0 ml-1 w-40 bg-white/95 backdrop-blur-xl rounded-lg shadow-xl border border-slate-200/60 p-1 z-50 animate-in fade-in slide-in-from-left-2 duration-100">
+        <div className="absolute left-full top-0 ml-1 min-w-[10rem] w-max bg-white/95 backdrop-blur-xl rounded-lg shadow-xl border border-slate-200/60 p-1 z-50 animate-in fade-in slide-in-from-left-2 duration-100">
           {subMenu}
         </div>
       )}
