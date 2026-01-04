@@ -97,7 +97,7 @@ const ContextMenuItem = ({ label, icon: Icon, shortcut, subMenu, onClick, danger
   );
 };
 
-const ProcessContextMenu = ({ x, y, process, onClose, onAction, topology, affinityModal, setAffinityModal, handleAffinityApply }) => {
+const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
   const [position, setPosition] = useState({ top: y, left: x });
   const menuRef = useRef(null);
 
@@ -164,15 +164,6 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction, topology, affini
         <div className="my-1 border-t border-slate-100"></div>
         <ContextMenuItem label="结束进程" icon={XCircle} danger onClick={() => { onAction('terminate_process', { pid: process.pid }); onClose(); }} />
       </div>
-      {/* Smart Affinity Modal */}
-      {affinityModal.visible && (
-        <SmartAffinitySelector
-          topology={topology}
-          currentAffinity={affinityModal.process?.cpu_affinity || 'All'}
-          onApply={handleAffinityApply}
-          onClose={() => setAffinityModal({ visible: false, process: null })}
-        />
-      )}
     </div>
   );
 };
@@ -223,6 +214,7 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
   const [sortConfig, setSortConfig] = useState({ key: 'cpu', direction: 'desc' });
   const [topology, setTopology] = useState([]);
   const [affinityModal, setAffinityModal] = useState({ visible: false, process: null });
+  const [history, setHistory] = useState({ cpu: [], memory: [] });
   const [loading, setLoading] = useState(true);
 
   // New States: Active Filter & Tree View
@@ -639,6 +631,18 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
           document.body
         )}
       </div>
+
+      {/* Smart Affinity Modal */}
+      {affinityModal.visible && (
+        <SmartAffinitySelector
+          topology={topology}
+          currentAffinity={affinityModal.process?.cpu_affinity || 'All'}
+          onApply={handleAffinityApply}
+          onClose={() => setAffinityModal({ visible: false, process: null })}
+        />
+      )}
     </div>
   );
 }
+
+

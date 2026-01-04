@@ -102,7 +102,7 @@ export default function SmartAffinitySelector({ topology = [], currentAffinity =
                 </div>
 
                 {/* Content - Scrollable */}
-                <div className="flex-1 overflow-y-auto p-6">
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6">
 
                     {/* Legend */}
                     <div className="flex gap-4 mb-4 text-xs">
@@ -122,7 +122,7 @@ export default function SmartAffinitySelector({ topology = [], currentAffinity =
                     </div>
 
                     {/* Grid */}
-                    <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-2">
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(2.5rem,1fr))] gap-2">
                         {topology.map((core) => {
                             const active = isSelected(core.id);
                             const colorClass = CoreTypeColors[core.core_type] || CoreTypeColors['Unknown'];
@@ -148,7 +148,6 @@ export default function SmartAffinitySelector({ topology = [], currentAffinity =
                             );
                         })}
                     </div>
-
                     {/* Smart Buttons */}
                     <div className="mt-6 flex flex-wrap gap-2">
                         {hasECores && (
