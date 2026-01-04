@@ -475,3 +475,28 @@ pub fn get_foreground_window_pid() -> Option<u32> {
         }
     }
 }
+
+/// 设置进程亲和性 (Hex Mask String)
+#[cfg(windows)]
+pub async fn set_process_affinity(pid: u32, affinity_mask: String) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        let mask = u64::from_str_radix(&affinity_mask, 16)
+            .map_err(|_| AppError::SystemError("Invalid mask format".to_string()))? as usize;
+
+        unsafe {
+            let handle = OpenProcess(PROCESS_SET_INFORMATION, false, pid)
+                .map_err(|_e| AppError::ProcessNotFound(pid))?;
+            
+            let ret = SetProcessAffinityMask(handle, mask);
+            let _ = CloseHandle(handle);
+
+            if ret.as_bool() {
+                Ok(())
+            } else {
+                Err(AppError::SystemError("SetProcessAffinityMask failed".to_string()))
+            }
+        }
+    })
+    .await
+    .map_err(|e| AppError::SystemError(e.to_string()))?
+}

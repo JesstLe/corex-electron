@@ -52,6 +52,18 @@ async fn set_affinity(
         .map_err(|e: AppError| e.to_string())
 }
 
+/// 设置进程亲和性 (Smart Selector)
+#[tauri::command]
+async fn set_process_affinity(
+    pid: u32,
+    affinity_mask: String,
+) -> Result<serde_json::Value, String> {
+    governor::set_process_affinity(pid, affinity_mask)
+        .await
+        .map(|_| serde_json::json!({"success": true}))
+        .map_err(|e: AppError| e.to_string())
+}
+
 /// 设置进程优先级
 #[tauri::command]
 async fn set_process_priority(pid: u32, priority: String) -> Result<bool, String> {
@@ -299,6 +311,7 @@ pub fn run() {
             // 进程管理
             get_processes,
             set_affinity,
+            set_process_affinity,
             set_process_priority,
             trim_process_memory,
             terminate_process,

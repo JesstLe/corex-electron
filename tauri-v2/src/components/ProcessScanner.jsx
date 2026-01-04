@@ -4,6 +4,7 @@ import { Search, CheckSquare, Square, Zap, XCircle, ChevronRight, ChevronDown, C
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import SmartAffinitySelector from './SmartAffinitySelector';
 
 const PRIORITY_MAP_CN = {
   'RealTime': '实时',
@@ -96,7 +97,7 @@ const ContextMenuItem = ({ label, icon: Icon, shortcut, subMenu, onClick, danger
   );
 };
 
-const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
+const ProcessContextMenu = ({ x, y, process, onClose, onAction, topology, affinityModal, setAffinityModal, handleAffinityApply }) => {
   const [position, setPosition] = useState({ top: y, left: x });
   const menuRef = useRef(null);
 
@@ -143,14 +144,12 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
           }
         />
         <ContextMenuItem
-          label="CPU 亲和性 (Affinity)"
+          label="CPU 亲和性 (智能调优)"
           icon={Cpu}
-          subMenu={
-            <AffinitySelector
-              process={process}
-              onApply={(mask) => { onAction('set_affinity', { pid: process.pid, coreMask: mask, mode: 'manual', primaryCore: null }); onClose(); }}
-            />
-          }
+          onClick={() => {
+            onAction('open_affinity_modal', { process });
+            onClose();
+          }}
         />
         <ContextMenuItem
           label="线程绑定 (帧线程优化)"
@@ -165,69 +164,20 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
         <div className="my-1 border-t border-slate-100"></div>
         <ContextMenuItem label="结束进程" icon={XCircle} danger onClick={() => { onAction('terminate_process', { pid: process.pid }); onClose(); }} />
       </div>
+      {/* Smart Affinity Modal */}
+      {affinityModal.visible && (
+        <SmartAffinitySelector
+          topology={topology}
+          currentAffinity={affinityModal.process?.cpu_affinity || 'All'}
+          onApply={handleAffinityApply}
+          onClose={() => setAffinityModal({ visible: false, process: null })}
+        />
+      )}
     </div>
   );
 };
 
-// -- Affinity Selector --
-const AffinitySelector = ({ process, onApply }) => {
-  const coreCount = navigator.hardwareConcurrency || 16;
-  // Initialize mask from process.cpu_affinity which is a hex string e.g., "0xffff" or "All"
-  // Note: This is an approximation. A robust solution would parse the backend hex string.
-  // For now, we default to all selected if parsing fails or is "All".
-  const initialMask = useMemo(() => {
-    if (!process.cpu_affinity || process.cpu_affinity === 'All') return (BigInt(1) << BigInt(coreCount)) - BigInt(1);
-    try {
-      return BigInt(process.cpu_affinity);
-    } catch {
-      return (BigInt(1) << BigInt(coreCount)) - BigInt(1);
-    }
-  }, [process.cpu_affinity, coreCount]);
 
-  const [selectedMask, setSelectedMask] = useState(initialMask);
-
-  const toggleCore = (coreIndex) => {
-    const bit = BigInt(1) << BigInt(coreIndex);
-    if ((selectedMask & bit) !== BigInt(0)) {
-      setSelectedMask(selectedMask & ~bit);
-    } else {
-      setSelectedMask(selectedMask | bit);
-    }
-  };
-
-  const isSelected = (coreIndex) => {
-    return (selectedMask & (BigInt(1) << BigInt(coreIndex))) !== BigInt(0);
-  };
-
-  return (
-    <div className="p-2 w-64">
-      <div className="flex justify-between items-center mb-2">
-        <span className="text-xs font-bold text-slate-500">CPU 核心 ({coreCount})</span>
-        <div className="flex gap-1">
-          <button onClick={() => setSelectedMask((BigInt(1) << BigInt(coreCount)) - BigInt(1))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">全选</button>
-          <button onClick={() => setSelectedMask(BigInt(0))} className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded hover:bg-slate-200 text-slate-600">清除</button>
-        </div>
-      </div>
-      <div className="grid grid-cols-4 gap-1 mb-2 max-h-48 overflow-y-auto">
-        {Array.from({ length: coreCount }).map((_, i) => (
-          <button
-            key={i}
-            onClick={(e) => { e.stopPropagation(); toggleCore(i); }}
-            className={`h-8 rounded text-[10px] font-mono transition-colors ${isSelected(i) ? 'bg-violet-500 text-white shadow-sm' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
-          >
-            {i}
-          </button>
-        ))}
-      </div>
-      <button
-        onClick={() => onApply(selectedMask.toString())}
-        className="w-full py-1 bg-violet-600 text-white text-xs rounded hover:bg-violet-700 transition-colors shadow-sm"
-      >
-        应用亲和性
-      </button>
-    </div>
-  );
-};
 
 // -- Thread Binding Selector (帧线程优化) --
 const ThreadBindingSelector = ({ process, onBind }) => {
@@ -271,7 +221,8 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
   const [searchTerm, setSearchTerm] = useState('');
   const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, process: null });
   const [sortConfig, setSortConfig] = useState({ key: 'cpu', direction: 'desc' });
-  const [history, setHistory] = useState({ cpu: [], memory: [] });
+  const [topology, setTopology] = useState([]);
+  const [affinityModal, setAffinityModal] = useState({ visible: false, process: null });
   const [loading, setLoading] = useState(true);
 
   // New States: Active Filter & Tree View
@@ -299,6 +250,7 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
         setProcesses(data);
         setLoading(false);
       }
+      invoke('get_cpu_topology').then(setTopology).catch(console.error);
     }).catch(e => console.error("初始获取进程失败:", e));
 
     // 2. Setup Listener for real-time updates (1s from backend)
@@ -435,6 +387,10 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
   };
 
   const menuAction = async (command, args) => {
+    if (command === 'open_affinity_modal') {
+      setAffinityModal({ visible: true, process: args.process });
+      return;
+    }
     if (!menuState.process) return;
     try {
       await invoke(command, args);
@@ -454,13 +410,34 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
     }
   };
 
+  const handleAffinityApply = async (maskString) => {
+    if (!affinityModal.process) return;
+    try {
+      await invoke('set_process_affinity', { pid: affinityModal.process.pid, affinityMask: maskString });
+      setAffinityModal({ visible: false, process: null });
+    } catch (e) {
+      console.error("Failed to set affinity:", e);
+    }
+  };
+
   const toggleSelect = (pid) => {
     const newSet = new Set(selectedPids);
     if (newSet.has(pid)) newSet.delete(pid);
     else newSet.add(pid);
+
     setSelectedPids(newSet);
-    if (newSet.size === 1) onSelect([...newSet][0]);
-    else if (newSet.size === 0) onSelect(null);
+
+    // 修复：如果选中多个或零个项目，将父组件状态置为空
+    if (newSet.size === 1) {
+      onSelect(Array.from(newSet)[0]);
+    } else {
+      onSelect(null);
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedPids(new Set());
+    onSelect(null);
   };
 
   const isSelected = (pid) => selectedPids.has(pid);
@@ -541,7 +518,7 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
           <div style={{ minWidth: '1100px' }}>
             {/* Grid Header - Inside scroll container */}
             <div className={`${GRID_COLS_CLASS} gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase tracking-wide pr-2 sticky top-0 z-10`}>
-              <div className="p-2 flex items-center justify-center cursor-pointer bg-slate-100" onClick={() => setSelectedPids(new Set())}>
+              <div className="p-2 flex items-center justify-center cursor-pointer bg-slate-100" onClick={handleClearSelection}>
                 {selectedPids.size > 0 ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} />}
               </div>
               {[
