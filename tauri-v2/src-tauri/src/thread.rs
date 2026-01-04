@@ -214,29 +214,36 @@ pub async fn smart_bind_thread(pid: u32, target_core: u32) -> AppResult<u32> {
 
             // 第二次采样并寻找最大差值
             let mut max_delta = 0u64;
-            let mut heaviest_tid = 0u32;
+            let mut heaviest_tid_by_delta = 0u32;
+            let mut max_total_time = 0u64;
+            let mut heaviest_tid_by_total = 0u32;
 
-            // 重新遍历线程 (此时无需快照，直接用 ID 打开即可，但为了遍历还是用快照方便)
-            // 优化：直接遍历第一次捕获的 TID 列表？不行，线程可能新建/销毁。
-            // 为了准确，再次快照。
-             let snapshot2 = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+            let snapshot2 = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
                 .map_err(|e| AppError::SystemError(format!("创建第二次快照失败: {}", e)))?;
 
             entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
-             if Thread32First(snapshot2, &mut entry).is_ok() {
+            if Thread32First(snapshot2, &mut entry).is_ok() {
                 loop {
                     if entry.th32OwnerProcessID == pid {
                         let tid = entry.th32ThreadID;
-                        // 只有在第一次快照中也存在的线程才计算 delta
-                        if let Some(&first_time) = threads_first.get(&tid) {
-                             if let Ok(second_time) = get_thread_cpu_time(tid) {
-                                 if second_time >= first_time {
-                                     let delta = second_time - first_time;
-                                     if delta > max_delta {
-                                         max_delta = delta;
-                                         heaviest_tid = tid;
-                                     }
-                                 }
+                        
+                        // 获取第二次时间 (也可以用于 fallback)
+                        if let Ok(second_time) = get_thread_cpu_time(tid) {
+                             // 跟踪历史总时间最大的线程 (作为 Fallback)
+                             if second_time > max_total_time {
+                                 max_total_time = second_time;
+                                 heaviest_tid_by_total = tid;
+                             }
+
+                             // 计算 Delta
+                             if let Some(&first_time) = threads_first.get(&tid) {
+                                  if second_time >= first_time {
+                                      let delta = second_time - first_time;
+                                      if delta > max_delta {
+                                          max_delta = delta;
+                                          heaviest_tid_by_delta = tid;
+                                      }
+                                  }
                              }
                         }
                     }
@@ -246,9 +253,17 @@ pub async fn smart_bind_thread(pid: u32, target_core: u32) -> AppResult<u32> {
             }
             let _ = CloseHandle(snapshot2);
 
+            // 决策逻辑: 优先使用 Delta (活跃度), 失败则回退到 Total Time (累计最重)
+            let heaviest_tid = if max_delta > 0 {
+                heaviest_tid_by_delta
+            } else {
+                tracing::warn!("Smart Bind: No active thread found (Delta=0), falling back to total CPU time.");
+                heaviest_tid_by_total
+            };
+
             // 检查是否找到有效的主线程
             if heaviest_tid == 0 {
-                return Err(AppError::SystemError("无法确定主线程 (Delta=0)".into()));
+                return Err(AppError::SystemError("无法确定主线程 (无线程或读取失败)".into()));
             }
 
             // 绑定到指定核心
@@ -256,8 +271,8 @@ pub async fn smart_bind_thread(pid: u32, target_core: u32) -> AppResult<u32> {
             set_thread_affinity(heaviest_tid, core_mask)?;
 
             tracing::info!(
-                "智能线程聚类: Process {} -> MainThread {} locked to Core {} (Delta: {}ns)",
-                pid, heaviest_tid, target_core, max_delta * 100
+                "智能线程聚类: Process {} -> MainThread {} locked to Core {} (Delta: {}ns, Total: {}ns)",
+                pid, heaviest_tid, target_core, max_delta, max_total_time
             );
 
             Ok(heaviest_tid)

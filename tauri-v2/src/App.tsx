@@ -319,14 +319,15 @@ function App() {
                         <Activity size={16} /><span>核心调度</span>
                     </button>
                     <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
-                        <Settings size={16} /><span>游戏模式</span>
+                        <Settings size={16} /><span>设置</span>
                     </button>
                     <button onClick={() => setActiveTab('optimizer')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'optimizer' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                         <Zap size={16} /><span>一键优化</span>
                     </button>
-                    <button onClick={() => setActiveTab('advanced')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'advanced' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                    {/* 暂时隐藏高级选项============================================================================================================== */}
+                    {/* <button onClick={() => setActiveTab('advanced')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'advanced' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                         <SlidersHorizontal size={16} /><span>高级选项</span>
-                    </button>
+                    </button> */}
                 </div>
             </div>
 
@@ -345,6 +346,9 @@ function App() {
                                 selectedPids={selectedPids}
                                 setSelectedPids={setSelectedPids}
                                 showToast={showToast}
+                                mode={mode}
+                                setMode={setMode}
+                                settings={settings}
                             />
                             <CoreGrid
                                 cores={cores}

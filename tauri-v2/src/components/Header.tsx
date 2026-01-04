@@ -43,6 +43,12 @@ export default function Header({ cpuModel }: HeaderProps) {
                 </div>
             </div>
 
+            <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 no-drag opacity-80 hover:opacity-100 transition-opacity">
+                <span className="text-sm font-medium bg-gradient-to-r from-violet-600/80 to-pink-600/80 bg-clip-text text-transparent">
+                    反馈及获取更新群聊：629474892
+                </span>
+            </div>
+
             <div className="flex items-center gap-1 no-drag relative z-50">
                 <button
                     onClick={handleMinimize}

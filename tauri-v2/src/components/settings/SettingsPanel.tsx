@@ -11,7 +11,6 @@ import { SmartTrimControl } from './SmartTrimControl';
 import { ThrottleListEditor } from './ThrottleListEditor';
 import { GameListEditor } from './GameListEditor';
 import { AppSettings, ProcessProfile } from '../../types';
-import { GeekEditor } from './GeekEditor';
 
 interface SettingsPanelProps {
     mode: string;
@@ -30,22 +29,6 @@ export default function SettingsPanel({
     onRemoveProfile,
     processes = []
 }: SettingsPanelProps) {
-    const [isGeekEditorOpen, setIsGeekEditorOpen] = React.useState(false);
-
-    const modes = [
-        { id: 'dynamic', label: 'T mode1', icon: Zap },
-        { id: 'd2', label: 'T mode2', icon: Scale, note: '笔记本可用' },
-        { id: 'd3', label: 'T mode3', icon: Zap },
-        { id: 'custom', label: '自定义', icon: Settings, note: '高级配置' },
-    ];
-
-    const handleModeClick = (id: string) => {
-        if (id === 'custom') {
-            setIsGeekEditorOpen(true);
-        } else {
-            onModeChange(id);
-        }
-    };
 
     const handleImport = async () => {
         if (!confirm("导入配置将覆盖当前的核心调优设置 (Profiles, SmartTrim, ProBalance 等)，确定继续吗？")) return;
@@ -79,40 +62,15 @@ export default function SettingsPanel({
         }
     };
 
+    const modes = [
+        { id: 'dynamic', label: 'T mode1', icon: Zap },
+        { id: 'd2', label: 'T mode2', icon: Scale, note: '笔记本可用' },
+        { id: 'd3', label: 'T mode3', icon: Zap },
+        { id: 'custom', label: '自定义', icon: Settings, note: '高级配置' },
+    ];
+
     return (
         <div className="space-y-4">
-            {/* 调度模式 */}
-            <div className="glass rounded-2xl p-5 shadow-soft">
-                <h4 className="font-medium text-slate-700 mb-4">调度模式</h4>
-                <div className="grid grid-cols-3 gap-3">
-                    {modes.map((m) => {
-                        const isActive = mode === m.id;
-                        const Icon = m.icon;
-
-                        return (
-                            <button
-                                key={m.id}
-                                onClick={() => handleModeClick(m.id)}
-                                className={`relative p-4 rounded-xl text-center transition-all duration-200 ${isActive
-                                    ? 'bg-gradient-to-br from-violet-500 to-pink-500 text-white shadow-glow'
-                                    : 'bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200'
-                                    }`}
-                            >
-                                <Icon size={18} className={`mx-auto ${isActive ? 'text-white' : 'text-violet-500'}`} />
-                                <div className={`font-medium text-sm mt-2 ${isActive ? 'text-white' : 'text-slate-700'}`}>
-                                    {m.label}
-                                </div>
-                                {m.note && (
-                                    <div className={`text-xs mt-0.5 ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
-                                        ({m.note})
-                                    </div>
-                                )}
-                            </button>
-                        );
-                    })}
-                </div>
-            </div>
-
             {/* 自动化策略 */}
             <div className="glass rounded-2xl p-5 shadow-soft">
                 <h4 className="font-medium text-slate-700 mb-4">自动化策略</h4>
@@ -359,15 +317,14 @@ export default function SettingsPanel({
                             导出配置
                         </button>
                     </div>
+
+                    <div className="pt-2 text-center">
+                        <p className="text-xs text-slate-400">
+                            反馈及获取更新群聊：629474892
+                        </p>
+                    </div>
                 </div>
             </div>
-            {/* Geek Editor Modal */}
-            <GeekEditor
-                isOpen={isGeekEditorOpen}
-                onClose={() => setIsGeekEditorOpen(false)}
-                settings={settings}
-                onSave={() => window.location.reload()}
-            />
         </div>
     );
 }

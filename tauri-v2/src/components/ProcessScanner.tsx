@@ -3,14 +3,15 @@ import ReactDOM from 'react-dom';
 import {
     Search, CheckSquare, Square, Zap, XCircle,
     ChevronRight, ChevronDown, Cpu, Play, Pause,
-    ArrowUp, ArrowDown, Activity, GitBranch
+    ArrowUp, ArrowDown, Activity, GitBranch, Scale, Settings
 } from 'lucide-react';
+import { GeekEditor } from './settings/GeekEditor';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import SmartAffinitySelector, { TopologyCore } from './SmartAffinitySelector';
 import Toast from './Toast';
-import { ProcessInfo } from '../types';
+import { ProcessInfo, AppSettings } from '../types';
 
 const PRIORITY_MAP_CN: Record<string, string> = {
     'RealTime': '实时',
@@ -249,6 +250,9 @@ interface ProcessScannerProps {
     selectedPids: Set<number>;
     setSelectedPids: (pids: Set<number>) => void;
     showToast: (msg: string, type?: any) => void;
+    mode: string;
+    setMode: (mode: string) => void;
+    settings: AppSettings;
 }
 
 export default function ProcessScanner({
@@ -258,9 +262,29 @@ export default function ProcessScanner({
     onScan,
     selectedPids,
     setSelectedPids,
-    showToast
+    showToast,
+    mode,
+    setMode,
+    settings
 }: ProcessScannerProps) {
     const [processes, setProcesses] = useState<any[]>(initialProcesses);
+    const [isGeekEditorOpen, setIsGeekEditorOpen] = useState(false);
+
+    const modes = [
+        { id: 'dynamic', label: 'T mode1', icon: Zap },
+        { id: 'd2', label: 'T mode2', icon: Scale, note: '笔记本可用' },
+        { id: 'd3', label: 'T mode3', icon: Zap },
+        { id: 'custom', label: '自定义', icon: Settings, note: '高级配置' },
+    ];
+
+    const handleModeClick = (id: string) => {
+        if (id === 'custom') {
+            setIsGeekEditorOpen(true);
+        } else {
+            console.log("Setting mode to:", id); // Debug
+            setMode(id);
+        }
+    };
     const [searchTerm, setSearchTerm] = useState('');
     const [menuState, setMenuState] = useState<{ visible: boolean, x: number, y: number, process: any }>({ visible: false, x: 0, y: 0, process: null });
     const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'cpu', direction: 'desc' });
@@ -549,141 +573,182 @@ export default function ProcessScanner({
     };
 
     return (
-        <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col min-h-[400px] max-h-[600px] overflow-hidden bg-white/50 backdrop-blur-md">
-            <div className="min-h-20 bg-white/60 border-b border-slate-200 flex flex-wrap items-center gap-4 px-4 py-2">
-                <div className="flex flex-col min-w-[100px]">
-                    <div className="text-[10px] uppercase font-bold text-slate-400">处理器占用</div>
-                    <div className="flex items-end gap-2">
-                        <span className="text-2xl font-mono font-bold text-slate-700">{history.cpu[history.cpu.length - 1]?.toFixed(0)}%</span>
-                        <MiniGraph data={history.cpu} color="#8b5cf6" width={80} height={24} />
-                    </div>
-                </div>
-                <div className="flex flex-col min-w-[100px]">
-                    <div className="text-[10px] uppercase font-bold text-slate-400">内存负载</div>
-                    <div className="flex items-end gap-2">
-                        <span className="text-2xl font-mono font-bold text-slate-700">{history.memory[history.memory.length - 1]?.toFixed(0)}%</span>
-                        <MiniGraph data={history.memory} color="#06b6d4" width={80} height={24} />
-                    </div>
-                </div>
-                <div className="flex-1 flex items-center justify-end gap-2 min-w-[220px]">
-                    <div className="relative w-full max-w-[200px]">
-                        <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
-                        <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search..." className="w-full pl-8 pr-2 py-1.5 bg-slate-100 rounded-lg text-xs outline-none" />
-                    </div>
-                    <button onClick={() => setShowActiveOnly(!showActiveOnly)} className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${showActiveOnly ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}><Activity size={12} /></button>
-                    <button onClick={() => setTreeViewMode(!treeViewMode)} className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${treeViewMode ? 'bg-violet-100 text-violet-600' : 'bg-slate-100 text-slate-500'}`}><GitBranch size={12} /></button>
-                    <button onClick={() => setIsPaused(!isPaused)} className={`p-1.5 rounded-lg transition-colors ${isPaused ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>{isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}</button>
-                </div>
-            </div>
+        <div className="flex flex-col h-full gap-4">
+            {/* Scheduling Mode Selector */}
+            <div className="glass rounded-xl p-4 shadow-sm border border-violet-100/50 bg-white/40 backdrop-blur-sm">
+                <div className="grid grid-cols-4 gap-3">
+                    {modes.map((m) => {
+                        const isActive = mode === m.id;
+                        const Icon = m.icon;
 
-            <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 relative">
-                <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-xs text-slate-700">
-                    <div style={{ minWidth: '1100px' }}>
-                        <div className={`${GRID_COLS_CLASS} gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase pr-2 sticky top-0 z-10`}>
-                            <div
-                                className="p-2 flex items-center justify-center cursor-pointer hover:bg-slate-200 transition-colors"
+                        return (
+                            <button
+                                key={m.id}
                                 onClick={() => {
-                                    const visiblePids = treeViewMode ? processTreeData.map(p => p.pid) : sortedProcesses.map(p => p.pid);
-                                    if (selectedPids.size >= visiblePids.length && visiblePids.length > 0) {
-                                        setSelectedPids(new Set());
-                                        onSelect(null);
-                                    } else {
-                                        setSelectedPids(new Set(visiblePids));
-                                        if (visiblePids.length === 1) onSelect(visiblePids[0]);
+                                    handleModeClick(m.id);
+                                    if (m.id !== 'custom') {
+                                        showToast(`已切换到${m.label}`, 'success', 2000);
                                     }
                                 }}
+                                className={`relative p-3 rounded-lg text-center transition-all duration-200 flex flex-col items-center justify-center gap-1.5 ${isActive
+                                    ? 'bg-gradient-to-br from-violet-500 to-pink-500 text-white shadow-glow'
+                                    : 'bg-white hover:bg-slate-50 text-slate-600 border border-slate-200/60'
+                                    }`}
                             >
-                                {selectedPids.size > 0 && selectedPids.size >= (treeViewMode ? processTreeData.length : sortedProcesses.length)
-                                    ? <CheckSquare size={12} className="text-violet-600" />
-                                    : selectedPids.size > 0
-                                        ? <div className="w-3 h-3 bg-violet-400 rounded-sm flex items-center justify-center"><div className="w-2 h-0.5 bg-white" /></div>
-                                        : <Square size={12} />}
-                            </div>
-                            {[
-                                { label: '名称', key: 'name' },
-                                { label: '用户', key: 'user' },
-                                { label: 'PID', key: 'pid' },
-                                { label: '优先级', key: 'priority' },
-                                { label: '亲和性', key: 'cpu_affinity' },
-                                { label: 'CPU', key: 'cpu' },
-                                { label: '内存', key: 'memory' },
-                                { label: '路径', key: 'path' }
-                            ].map(col => {
-                                const isSorted = sortConfig.key === col.key;
-                                return (
-                                    <div
-                                        key={col.key}
-                                        className={`p-2 flex items-center gap-1 cursor-pointer hover:bg-slate-200 transition-colors group ${isSorted ? 'text-violet-600 bg-violet-50/50' : ''}`}
-                                        onClick={() => setSortConfig(prev => ({
-                                            key: col.key,
-                                            direction: prev.key === col.key && prev.direction === 'desc' ? 'asc' : 'desc'
-                                        }))}
-                                    >
-                                        {col.label}
-                                        {isSorted ? (
-                                            sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />
-                                        ) : (
-                                            <ArrowUp size={10} className="opacity-0 group-hover:opacity-30" />
-                                        )}
-                                    </div>
-                                );
-                            })}
-                        </div>
+                                <Icon size={16} className={isActive ? 'text-white' : 'text-violet-500'} />
+                                <span className="font-medium text-xs">{m.label}</span>
+                                {m.note && isActive && (
+                                    <span className="text-[10px] opacity-80 scale-90">({m.note})</span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
 
-                        <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
-                            {rowVirtualizer.getVirtualItems().map((v) => {
-                                const p = processTreeData[v.index];
-                                const active = selectedPids.has(p.pid);
-                                return (
-                                    <div
-                                        key={p.pid}
-                                        ref={rowVirtualizer.measureElement}
-                                        onContextMenu={(e) => { e.preventDefault(); setMenuState({ visible: true, x: e.pageX, y: e.pageY, process: p }); }}
-                                        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${v.size}px`, transform: `translateY(${v.start}px)` }}
-                                        className={`${GRID_COLS_CLASS} gap-px items-center border-b border-slate-50 hover:bg-violet-50/60 ${active ? 'bg-violet-100/50' : v.index % 2 === 0 ? 'bg-white/40' : 'bg-white/10'}`}
-                                    >
-                                        <div className="flex justify-center">
-                                            <button onClick={() => toggleSelect(p.pid)}>{active ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} className="text-slate-300" />}</button>
-                                        </div>
-                                        <div className="px-2 py-1.5 truncate flex items-center font-semibold text-slate-700" onClick={() => toggleSelect(p.pid)}>
-                                            {treeViewMode && p.depth > 0 && <span style={{ width: p.depth * 16 }} className="inline-block" />}
-                                            {treeViewMode && p.hasChildren && (
-                                                <button onClick={(e) => { e.stopPropagation(); setExpandedPids(prev => { const s = new Set(prev); if (s.has(p.pid)) s.delete(p.pid); else s.add(p.pid); return s; }); }} className="mr-1 text-slate-400">
-                                                    {p.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                                                </button>
-                                            )}
-                                            <img src={p.icon_base64 ? `data:image/png;base64,${p.icon_base64}` : "https://img.icons8.com/color/48/console.png"} className="w-4 h-4 mr-2" alt="" />
-                                            {p.name}
-                                        </div>
-                                        <div className="px-2 py-1.5 truncate text-slate-500">{p.user || 'System'}</div>
-                                        <div className="px-2 py-1.5 truncate text-slate-400">{p.pid}</div>
-                                        <div className="px-2 py-1.5 truncate"><span className={`px-1.5 py-0.5 rounded text-[10px] ${p.priority === 'High' || p.priority === 'RealTime' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{PRIORITY_MAP_CN[p.priority] || p.priority}</span></div>
-                                        <div className="px-2 py-1.5 truncate text-slate-400 text-[10px]">{p.cpu_affinity}</div>
-                                        <div className={`px-2 py-1.5 truncate ${p.cpu_usage > 10 ? 'text-red-500 font-bold' : 'text-slate-600'}`}>{p.cpu_usage?.toFixed(1)}%</div>
-                                        <div className="px-2 py-1.5 truncate text-slate-600">{formatBytes(p.memory_usage || 0)}</div>
-                                        <div className="px-2 py-1.5 truncate text-slate-400 cursor-pointer hover:text-violet-500" onDoubleClick={() => p.path && invoke('open_file_location', { path: p.path })}>{p.path}</div>
-                                    </div>
-                                );
-                            })}
+            <div className="glass rounded-xl shadow-sm border border-slate-200/60 flex flex-col min-h-[500px] h-[500px] overflow-hidden bg-white/50 backdrop-blur-md">
+                <div className="min-h-20 bg-white/60 border-b border-slate-200 flex flex-wrap items-center gap-4 px-4 py-2">
+                    <div className="flex flex-col min-w-[100px]">
+                        <div className="text-[10px] uppercase font-bold text-slate-400">处理器占用</div>
+                        <div className="flex items-end gap-2">
+                            <span className="text-2xl font-mono font-bold text-slate-700">{history.cpu[history.cpu.length - 1]?.toFixed(0)}%</span>
+                            <MiniGraph data={history.cpu} color="#8b5cf6" width={80} height={24} />
                         </div>
+                    </div>
+                    <div className="flex flex-col min-w-[100px]">
+                        <div className="text-[10px] uppercase font-bold text-slate-400">内存负载</div>
+                        <div className="flex items-end gap-2">
+                            <span className="text-2xl font-mono font-bold text-slate-700">{history.memory[history.memory.length - 1]?.toFixed(0)}%</span>
+                            <MiniGraph data={history.memory} color="#06b6d4" width={80} height={24} />
+                        </div>
+                    </div>
+                    <div className="flex-1 flex items-center justify-end gap-2 min-w-[220px]">
+                        <div className="relative w-full max-w-[200px]">
+                            <Search size={14} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <input type="text" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} placeholder="Search..." className="w-full pl-8 pr-2 py-1.5 bg-slate-100 rounded-lg text-xs outline-none" />
+                        </div>
+                        <button onClick={() => setShowActiveOnly(!showActiveOnly)} className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${showActiveOnly ? 'bg-green-100 text-green-600' : 'bg-slate-100 text-slate-500'}`}><Activity size={12} /></button>
+                        <button onClick={() => setTreeViewMode(!treeViewMode)} className={`px-2 py-1.5 rounded-lg text-xs font-medium transition-colors ${treeViewMode ? 'bg-violet-100 text-violet-600' : 'bg-slate-100 text-slate-500'}`}><GitBranch size={12} /></button>
+                        <button onClick={() => setIsPaused(!isPaused)} className={`p-1.5 rounded-lg transition-colors ${isPaused ? 'bg-orange-100 text-orange-600' : 'bg-slate-100 text-slate-500'}`}>{isPaused ? <Play size={14} fill="currentColor" /> : <Pause size={14} fill="currentColor" />}</button>
                     </div>
                 </div>
 
-                {menuState.visible && typeof document !== 'undefined' && ReactDOM.createPortal(
-                    <ProcessContextMenu x={menuState.x} y={menuState.y} process={menuState.process} onClose={() => setMenuState({ ...menuState, visible: false })} onAction={menuAction} />,
-                    document.body
-                )}
-            </div>
+                <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 relative">
+                    <div ref={parentRef} className="flex-1 overflow-y-auto overflow-x-auto font-mono text-xs text-slate-700">
+                        <div style={{ minWidth: '1100px' }}>
+                            <div className={`${GRID_COLS_CLASS} gap-px bg-slate-100 border-b border-slate-200 text-[11px] font-bold text-slate-500 uppercase pr-2 sticky top-0 z-10`}>
+                                <div
+                                    className="p-2 flex items-center justify-center cursor-pointer hover:bg-slate-200 transition-colors"
+                                    onClick={() => {
+                                        const visiblePids = treeViewMode ? processTreeData.map(p => p.pid) : sortedProcesses.map(p => p.pid);
+                                        if (selectedPids.size >= visiblePids.length && visiblePids.length > 0) {
+                                            setSelectedPids(new Set());
+                                            onSelect(null);
+                                        } else {
+                                            setSelectedPids(new Set(visiblePids));
+                                            if (visiblePids.length === 1) onSelect(visiblePids[0]);
+                                        }
+                                    }}
+                                >
+                                    {selectedPids.size > 0 && selectedPids.size >= (treeViewMode ? processTreeData.length : sortedProcesses.length)
+                                        ? <CheckSquare size={12} className="text-violet-600" />
+                                        : selectedPids.size > 0
+                                            ? <div className="w-3 h-3 bg-violet-400 rounded-sm flex items-center justify-center"><div className="w-2 h-0.5 bg-white" /></div>
+                                            : <Square size={12} />}
+                                </div>
+                                {[
+                                    { label: '名称', key: 'name' },
+                                    { label: '用户', key: 'user' },
+                                    { label: 'PID', key: 'pid' },
+                                    { label: '优先级', key: 'priority' },
+                                    { label: '亲和性', key: 'cpu_affinity' },
+                                    { label: 'CPU', key: 'cpu' },
+                                    { label: '内存', key: 'memory' },
+                                    { label: '路径', key: 'path' }
+                                ].map(col => {
+                                    const isSorted = sortConfig.key === col.key;
+                                    return (
+                                        <div
+                                            key={col.key}
+                                            className={`p-2 flex items-center gap-1 cursor-pointer hover:bg-slate-200 transition-colors group ${isSorted ? 'text-violet-600 bg-violet-50/50' : ''}`}
+                                            onClick={() => setSortConfig(prev => ({
+                                                key: col.key,
+                                                direction: prev.key === col.key && prev.direction === 'desc' ? 'asc' : 'desc'
+                                            }))}
+                                        >
+                                            {col.label}
+                                            {isSorted ? (
+                                                sortConfig.direction === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />
+                                            ) : (
+                                                <ArrowUp size={10} className="opacity-0 group-hover:opacity-30" />
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
 
-            {affinityModal.visible && (
-                <SmartAffinitySelector
-                    topology={topology}
-                    currentAffinity={affinityModal.process?.cpu_affinity || 'All'}
-                    initialCpuSets={affinityModal.process?.initialCpuSets}
-                    onApply={handleAffinityApply}
-                    onClose={() => setAffinityModal({ visible: false, process: null })}
+                            <div style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: 'relative' }}>
+                                {rowVirtualizer.getVirtualItems().map((v) => {
+                                    const p = processTreeData[v.index];
+                                    const active = selectedPids.has(p.pid);
+                                    return (
+                                        <div
+                                            key={p.pid}
+                                            ref={rowVirtualizer.measureElement}
+                                            onContextMenu={(e) => { e.preventDefault(); setMenuState({ visible: true, x: e.pageX, y: e.pageY, process: p }); }}
+                                            style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: `${v.size}px`, transform: `translateY(${v.start}px)` }}
+                                            className={`${GRID_COLS_CLASS} gap-px items-center border-b border-slate-50 hover:bg-violet-50/60 ${active ? 'bg-violet-100/50' : v.index % 2 === 0 ? 'bg-white/40' : 'bg-white/10'}`}
+                                        >
+                                            <div className="flex justify-center">
+                                                <button onClick={() => toggleSelect(p.pid)}>{active ? <CheckSquare size={12} className="text-violet-600" /> : <Square size={12} className="text-slate-300" />}</button>
+                                            </div>
+                                            <div className="px-2 py-1.5 truncate flex items-center font-semibold text-slate-700" onClick={() => toggleSelect(p.pid)}>
+                                                {treeViewMode && p.depth > 0 && <span style={{ width: p.depth * 16 }} className="inline-block" />}
+                                                {treeViewMode && p.hasChildren && (
+                                                    <button onClick={(e) => { e.stopPropagation(); setExpandedPids(prev => { const s = new Set(prev); if (s.has(p.pid)) s.delete(p.pid); else s.add(p.pid); return s; }); }} className="mr-1 text-slate-400">
+                                                        {p.isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                                    </button>
+                                                )}
+                                                <img src={p.icon_base64 ? `data:image/png;base64,${p.icon_base64}` : "https://img.icons8.com/color/48/console.png"} className="w-4 h-4 mr-2" alt="" />
+                                                {p.name}
+                                            </div>
+                                            <div className="px-2 py-1.5 truncate text-slate-500">{p.user || 'System'}</div>
+                                            <div className="px-2 py-1.5 truncate text-slate-400">{p.pid}</div>
+                                            <div className="px-2 py-1.5 truncate"><span className={`px-1.5 py-0.5 rounded text-[10px] ${p.priority === 'High' || p.priority === 'RealTime' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{PRIORITY_MAP_CN[p.priority] || p.priority}</span></div>
+                                            <div className="px-2 py-1.5 truncate text-slate-400 text-[10px]">{p.cpu_affinity}</div>
+                                            <div className={`px-2 py-1.5 truncate ${p.cpu_usage > 10 ? 'text-red-500 font-bold' : 'text-slate-600'}`}>{p.cpu_usage?.toFixed(1)}%</div>
+                                            <div className="px-2 py-1.5 truncate text-slate-600">{formatBytes(p.memory_usage || 0)}</div>
+                                            <div className="px-2 py-1.5 truncate text-slate-400 cursor-pointer hover:text-violet-500" onDoubleClick={() => p.path && invoke('open_file_location', { path: p.path })}>{p.path}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+
+                    {menuState.visible && typeof document !== 'undefined' && ReactDOM.createPortal(
+                        <ProcessContextMenu x={menuState.x} y={menuState.y} process={menuState.process} onClose={() => setMenuState({ ...menuState, visible: false })} onAction={menuAction} />,
+                        document.body
+                    )}
+                </div>
+
+                {affinityModal.visible && (
+                    <SmartAffinitySelector
+                        topology={topology}
+                        currentAffinity={affinityModal.process?.cpu_affinity || 'All'}
+                        initialCpuSets={affinityModal.process?.initialCpuSets}
+                        onApply={handleAffinityApply}
+                        onClose={() => setAffinityModal({ visible: false, process: null })}
+                    />
+                )}
+
+                <GeekEditor
+                    isOpen={isGeekEditorOpen}
+                    onClose={() => setIsGeekEditorOpen(false)}
+                    settings={settings}
+                    onSave={() => window.location.reload()}
                 />
-            )}
+            </div>
         </div>
     );
 }
