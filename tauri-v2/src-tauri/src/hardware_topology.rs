@@ -206,3 +206,28 @@ fn get_logical_processor_info_ex() -> Result<Vec<SYSTEM_LOGICAL_PROCESSOR_INFORM
         Ok(info_list)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_topology() {
+        match get_cpu_topology() {
+            Ok(topo) => {
+                println!("Detected {} logical cores", topo.len());
+                for core in &topo {
+                    println!("Core {}: Type={:?}, PhysID={}, Group={}", core.id, core.core_type, core.physical_id, core.group_id);
+                }
+                
+                let p_cores = topo.iter().filter(|c| c.core_type == CoreType::Performance).count();
+                let e_cores = topo.iter().filter(|c| c.core_type == CoreType::Efficiency).count();
+                let v_cores = topo.iter().filter(|c| c.core_type == CoreType::VCache).count();
+                
+                println!("Summary: P-Cores={}, E-Cores={}, V-Cache Cores={}", p_cores, e_cores, v_cores);
+                assert!(topo.len() > 0);
+            },
+            Err(e) => panic!("Failed to get topology: {}", e),
+        }
+    }
+}

@@ -6,7 +6,7 @@
 
 use tauri::Manager;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use task_nexus_lib::{config, governor, hardware, power, tweaks, thread, AppError};
+use task_nexus_lib::{config, governor, hardware, hardware_topology, power, tweaks, thread, AppError};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -23,8 +23,8 @@ async fn get_cpu_info() -> Result<serde_json::Value, String> {
 
 /// 获取 CPU 拓扑
 #[tauri::command]
-async fn get_cpu_topology() -> Result<task_nexus_lib::CpuTopology, String> {
-    hardware::detect_cpu_topology().await.map_err(|e: AppError| e.to_string())
+async fn get_cpu_topology() -> Result<Vec<hardware_topology::LogicalCore>, String> {
+    hardware_topology::get_cpu_topology().map_err(|e| e.to_string())
 }
 
 // ============================================================================
