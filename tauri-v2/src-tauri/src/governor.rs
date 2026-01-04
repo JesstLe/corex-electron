@@ -32,7 +32,8 @@ pub async fn get_process_snapshot() -> AppResult<Vec<ProcessInfo>> {
     
     tokio::task::spawn_blocking(|| {
         let mut sys = System::new();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
+        // 刷新进程列表 (sysinfo 0.31 removes bool arg)
+        sys.refresh_processes(ProcessesToUpdate::All);
         
         let mut processes = Vec::new();
         let mut new_cpu_times = HashMap::new();
@@ -92,15 +93,13 @@ fn get_process_details(pid: u32) -> Option<(String, u64)> {
         
         // 获取优先级
         let priority_class = GetPriorityClass(handle);
-        let priority = match priority_class {
-            IDLE_PRIORITY_CLASS => "Idle",
-            BELOW_NORMAL_PRIORITY_CLASS => "BelowNormal",
-            NORMAL_PRIORITY_CLASS => "Normal",
-            ABOVE_NORMAL_PRIORITY_CLASS => "AboveNormal",
-            HIGH_PRIORITY_CLASS => "High",
-            REALTIME_PRIORITY_CLASS => "RealTime",
-            _ => "Normal",
-        };
+        let priority = if priority_class == IDLE_PRIORITY_CLASS.0 { "Idle" }
+        else if priority_class == BELOW_NORMAL_PRIORITY_CLASS.0 { "BelowNormal" }
+        else if priority_class == NORMAL_PRIORITY_CLASS.0 { "Normal" }
+        else if priority_class == ABOVE_NORMAL_PRIORITY_CLASS.0 { "AboveNormal" }
+        else if priority_class == HIGH_PRIORITY_CLASS.0 { "High" }
+        else if priority_class == REALTIME_PRIORITY_CLASS.0 { "RealTime" }
+        else { "Normal" };
         
         // 获取亲和性
         let mut process_mask: usize = 0;
@@ -147,7 +146,7 @@ pub async fn set_priority(pid: u32, level: PriorityLevel) -> AppResult<()> {
 
 #[cfg(not(windows))]
 pub async fn set_priority(_pid: u32, _level: PriorityLevel) -> AppResult<()> {
-    Err(AppError::SystemError("仅支持 Windows".to_string()))
+    Err(AppError::SystemError("仅支持 Mindows".to_string()))
 }
 
 /// 设置进程亲和性
@@ -329,7 +328,7 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
         let available_before = sys_mem_before.available_memory();
         
         let mut sys = System::new();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
+        sys.refresh_processes(ProcessesToUpdate::All);
         
         let mut trimmed_count = 0u32;
         let mut total_freed = 0u64;
@@ -405,7 +404,7 @@ fn get_foreground_window_pid() -> Option<u32> {
     
     unsafe {
         let hwnd = GetForegroundWindow();
-        if hwnd.0 .0 == 0 {
+        if hwnd.0.is_null() {
             return None;
         }
         

@@ -1,6 +1,10 @@
-//! Task Nexus - 电竞性能优化工具
-//! 
-//! 核心数据结构和类型定义
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+pub mod governor;
+pub mod hardware;
+pub mod config;
+pub mod power;
+pub mod tweaks;
 
 use serde::{Deserialize, Serialize};
 

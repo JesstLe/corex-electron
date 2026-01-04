@@ -2,10 +2,11 @@
 //! 
 //! 应用配置的加载、保存和管理
 
-use crate::{AppConfig, AppError, AppResult, ProcessProfile};
 use once_cell::sync::OnceCell;
 use parking_lot::RwLock;
 use std::path::PathBuf;
+use tauri::{AppHandle, Manager, Runtime};
+use crate::{AppConfig, AppError, AppResult, ProcessProfile};
 
 /// 全局配置实例
 static CONFIG: OnceCell<RwLock<AppConfig>> = OnceCell::new();
@@ -14,9 +15,9 @@ static CONFIG: OnceCell<RwLock<AppConfig>> = OnceCell::new();
 static CONFIG_PATH: OnceCell<PathBuf> = OnceCell::new();
 
 /// 初始化配置
-pub async fn init_config(app: &tauri::AppHandle) -> AppResult<()> {
+pub fn init_config<R: Runtime>(app: &AppHandle<R>) -> AppResult<()> {
     let app_data = app.path().app_data_dir()
-        .map_err(|e| AppError::ConfigError(e.to_string()))?;
+        .map_err(|e: tauri::Error| AppError::ConfigError(e.to_string()))?;
     
     // 确保目录存在
     std::fs::create_dir_all(&app_data).ok();

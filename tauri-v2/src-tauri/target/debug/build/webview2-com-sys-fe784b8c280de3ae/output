@@ -1,0 +1,2 @@
+cargo:rustc-link-search=native=E:\Documents\WorkSpace\Task_NeXus\Task_NeXus\tauri-v2\src-tauri\target\debug\build\webview2-com-sys-fe784b8c280de3ae\out\x64
+cargo:rustc-link-lib=advapi32
