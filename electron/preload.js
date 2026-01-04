@@ -6,7 +6,9 @@ contextBridge.exposeInMainWorld('electron', {
   setAffinity: (pid, coreMask, mode, primaryCore) => ipcRenderer.invoke('set-affinity', pid, coreMask, mode, primaryCore),
   minimize: () => ipcRenderer.send('window-minimize'),
   toggleMaximize: () => ipcRenderer.send('window-toggle-maximize'),
-  // 使用 quit 完全退出应用
+  // 关闭窗口（由主进程决定是隐藏到托盘还是退出）
+  close: () => ipcRenderer.send('window-close'),
+  // 完全退出应用
   quit: () => ipcRenderer.send('app-quit'),
   onMaximizedStateChange: (callback) => ipcRenderer.on('window-maximized-state', (_, state) => callback(state)),
   getSettings: () => ipcRenderer.invoke('get-settings'),
