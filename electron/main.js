@@ -599,15 +599,64 @@ function applyAffinityAndPriority(pid, mask, mode, priority, primaryCore = null)
 function getProcessesList(options = { includePriority: true }) {
   return new Promise((resolve, reject) => {
     const isWin = process.platform === 'win32';
-    const cmd = isWin
-      ? 'wmic path Win32_PerfFormattedData_PerfProc_Process get Name,IDProcess,PercentProcessorTime /FORMAT:CSV'
-      : 'ps -ax -o pid,%cpu,comm';
 
-    exec(cmd, { timeout: 10000 }, (error, stdout, stderr) => {
-      if (error) {
-        return reject(error);
+    if (!isWin) {
+      // macOS/Linux 使用 ps 命令
+      exec('ps -ax -o pid,%cpu,comm', { timeout: 10000 }, (error, stdout) => {
+        if (error) return reject(error);
+        const processes = [];
+        stdout.split('\n').forEach(line => {
+          const match = line.trim().match(/^\s*(\d+)\s+([\d.]+)\s+(.+)/);
+          if (match) {
+            const pid = parseInt(match[1], 10);
+            const cpu = parseFloat(match[2]);
+            const name = require('path').basename(match[3].trim());
+            if (name && !isNaN(pid) && pid > 0) {
+              processes.push({ pid, name, cpu, priority: 'Normal' });
+            }
+          }
+        });
+        resolve(processes);
+      });
+      return;
+    }
+
+    // Windows: 先尝试 wmic，失败则使用 PowerShell
+    const wmicCmd = 'wmic path Win32_PerfFormattedData_PerfProc_Process get Name,IDProcess,PercentProcessorTime /FORMAT:CSV';
+
+    exec(wmicCmd, { timeout: 10000 }, (error, stdout, stderr) => {
+      // 如果 wmic 失败或结果为空，使用 PowerShell 备选方案
+      if (error || !stdout || stdout.trim().split('\n').length < 3) {
+        writeLog('WARN', 'wmic failed, falling back to PowerShell');
+
+        const psCmd = 'powershell -NoProfile -Command "Get-Process | Select-Object Id,ProcessName,CPU | ConvertTo-Csv -NoTypeInformation"';
+        exec(psCmd, { timeout: 15000 }, (psErr, psOut) => {
+          if (psErr) return reject(psErr);
+
+          const processes = [];
+          const lines = psOut.split('\n');
+
+          lines.forEach((line, idx) => {
+            if (idx === 0 || !line.trim()) return; // Skip header
+            const parts = line.split(',').map(p => p.replace(/"/g, '').trim());
+            if (parts.length >= 2) {
+              const pid = parseInt(parts[0], 10);
+              let name = parts[1];
+              const cpu = parseFloat(parts[2]) || 0;
+
+              if (!name || isNaN(pid) || pid <= 0) return;
+              if (!name.toLowerCase().endsWith('.exe')) name += '.exe';
+
+              processes.push({ pid, name, cpu: cpu / os.cpus().length, priority: 'Normal' });
+            }
+          });
+
+          resolve(processes);
+        });
+        return;
       }
 
+      // wmic 成功，继续原有逻辑
       const processes = [];
       const lines = stdout.split('\n');
 
