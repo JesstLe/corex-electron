@@ -104,6 +104,11 @@ pub async fn set_config_value(key: &str, value: serde_json::Value) -> AppResult<
                     cfg.throttle_list = list;
                 }
             }
+            "proBalance" => {
+                if let Ok(config) = serde_json::from_value(value) {
+                    cfg.pro_balance = config;
+                }
+            }
             "width" => {
                 if let Some(v) = value.as_u64() {
                     cfg.width = v as u32;

@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { Search, CheckSquare, Square, Zap, XCircle, ChevronRight, Cpu, Play, Pause, ArrowUp, ArrowDown } from 'lucide-react';
 import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 const PRIORITY_MAP_CN = {
@@ -117,7 +118,7 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
                 <ContextMenuItem
                   key={p}
                   label={`${PRIORITY_MAP_CN[p]} (${p})`}
-                  onClick={() => { onAction('setPriority', p); onClose(); }}
+                  onClick={() => { onAction('set_process_priority', { pid: process.pid, priority: p }); onClose(); }}
                   icon={p === process.priority ? CheckSquare : undefined}
                 />
               ))}
@@ -129,14 +130,14 @@ const ProcessContextMenu = ({ x, y, process, onClose, onAction }) => {
           icon={Cpu}
           subMenu={
             <>
-              <ContextMenuItem label="所有核心 (All)" onClick={() => { onAction('setAffinity', 'all'); onClose(); }} />
-              <ContextMenuItem label="仅 P-Cores" onClick={() => { onAction('setAffinity', 'p-cores'); onClose(); }} />
-              <ContextMenuItem label="仅 E-Cores" onClick={() => { onAction('setAffinity', 'e-cores'); onClose(); }} />
+              <ContextMenuItem label="所有核心 (All)" onClick={() => { onAction('set_affinity', { pid: process.pid, coreMask: '-1', mode: 'manual', primaryCore: null }); onClose(); }} />
+              <ContextMenuItem label="仅 P-Cores" onClick={() => { onAction('set_affinity', { pid: process.pid, coreMask: 'p-cores', mode: 'manual', primaryCore: null }); onClose(); }} />
+              <ContextMenuItem label="仅 E-Cores" onClick={() => { onAction('set_affinity', { pid: process.pid, coreMask: 'e-cores', mode: 'manual', primaryCore: null }); onClose(); }} />
             </>
           }
         />
         <div className="my-1 border-t border-slate-100"></div>
-        <ContextMenuItem label="结束进程 (Terminate)" icon={XCircle} danger onClick={() => { onAction('terminate'); onClose(); }} />
+        <ContextMenuItem label="结束进程 (Terminate)" icon={XCircle} danger onClick={() => { onAction('terminate_process', { pid: process.pid }); onClose(); }} />
       </div>
     </div>
   );
@@ -148,27 +149,40 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
   const [menuState, setMenuState] = useState({ visible: false, x: 0, y: 0, process: null });
   const [sortConfig, setSortConfig] = useState({ key: 'cpu', direction: 'desc' });
   const [history, setHistory] = useState({ cpu: [], memory: [] });
+  const [loading, setLoading] = useState(true);
 
   // Pause State
   const [isPaused, setIsPaused] = useState(false);
   const pausedRef = useRef(isPaused);
 
-  // Sync ref with state to avoid stale closure
+  // Sync ref with state
   useEffect(() => {
     pausedRef.current = isPaused;
   }, [isPaused]);
 
-  // Setup Event Listener
+  // Initial Fetch & Event Listener
   useEffect(() => {
     let unlisten;
+
+    // 1. Fetch immediately to show something
+    invoke('get_processes').then(data => {
+      if (!pausedRef.current && data) {
+        setProcesses(data);
+        setLoading(false);
+      }
+    }).catch(e => console.error("Initial fetch failed:", e));
+
+    // 2. Setup Listener for updates
     async function setupListener() {
       unlisten = await listen('process-update', (event) => {
         if (!pausedRef.current) {
           setProcesses(event.payload);
+          setLoading(false);
         }
       });
     }
     setupListener();
+
     return () => {
       if (unlisten) unlisten();
     };
@@ -239,13 +253,14 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
     setMenuState({ visible: true, x: e.pageX, y: e.pageY, process });
   };
 
-  const menuAction = async (actionType, value) => {
+  const menuAction = async (command, args) => {
     if (!menuState.process) return;
     try {
-      if (window.electron && actionType === 'setPriority') {
-        await window.electron.setProcessPriority(menuState.process.pid, value);
-      }
-    } catch (e) { console.error(e); }
+      await invoke(command, args);
+      console.log(`Executed ${command}`, args);
+    } catch (e) {
+      console.error(`Failed to execute ${command}:`, e);
+    }
   };
 
   const toggleSelect = (pid) => {
@@ -286,7 +301,9 @@ export default function ProcessScanner({ selectedPid, onSelect, onScan, selected
         </div>
         <div className="flex flex-col justify-between">
           <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Processes</div>
-          <span className="text-xl font-mono text-slate-600">{processes.length}</span>
+          <span className="text-xl font-mono text-slate-600">
+            {loading ? "..." : processes.length}
+          </span>
         </div>
         {/* Search & Control */}
         <div className="flex items-center gap-2">
