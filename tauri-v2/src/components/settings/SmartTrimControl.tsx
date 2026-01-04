@@ -1,24 +1,26 @@
 import React, { useState } from 'react';
-
-interface SmartTrimSettings {
-    enabled: boolean;
-    threshold: number;
-    mode: 'standby-only' | 'working-set';
-}
+import { SmartTrimSettings } from '../../types';
 
 interface SmartTrimControlProps {
-    settings: SmartTrimSettings;
+    settings?: SmartTrimSettings;
     onUpdate: (val: SmartTrimSettings) => void;
 }
 
+const DEFAULT_SETTINGS: SmartTrimSettings = {
+    enabled: false,
+    threshold: 80,
+    mode: 'standby-only'
+};
+
 export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) {
+    const currentSettings = settings || DEFAULT_SETTINGS;
     // Use a local state for the threshold to make slider movement smooth
-    const [localThreshold, setLocalThreshold] = useState(settings?.threshold || 80);
+    const [localThreshold, setLocalThreshold] = useState(currentSettings.threshold);
 
     const toggle = () => {
         onUpdate({
-            ...settings,
-            enabled: !settings?.enabled
+            ...currentSettings,
+            enabled: !currentSettings.enabled
         });
     };
 
@@ -28,7 +30,7 @@ export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) 
 
     const handleSliderCommit = () => {
         onUpdate({
-            ...settings,
+            ...currentSettings,
             threshold: localThreshold
         });
     };
@@ -48,7 +50,7 @@ export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) 
         if (val > 95) val = 95;
         setLocalThreshold(val);
         onUpdate({
-            ...settings,
+            ...currentSettings,
             threshold: val
         });
     };
@@ -63,7 +65,7 @@ export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) 
                 <label className="relative inline-flex items-center cursor-pointer">
                     <input
                         type="checkbox"
-                        checked={!!settings?.enabled}
+                        checked={!!currentSettings.enabled}
                         onChange={toggle}
                         className="sr-only peer"
                     />
@@ -105,8 +107,8 @@ export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) 
                     <span className="text-xs text-slate-500 whitespace-nowrap">清理模式</span>
                     <div className="flex gap-2">
                         <button
-                            onClick={() => onUpdate({ ...settings, mode: 'standby-only' })}
-                            className={`px-2 py-1 text-xs rounded transition-colors ${(settings.mode || 'standby-only') === 'standby-only'
+                            onClick={() => onUpdate({ ...currentSettings, mode: 'standby-only' })}
+                            className={`px-2 py-1 text-xs rounded transition-colors ${(currentSettings.mode || 'standby-only') === 'standby-only'
                                 ? 'bg-green-100 text-green-700 font-medium'
                                 : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
                                 }`}
@@ -115,8 +117,8 @@ export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) 
                             安全 (Standby)
                         </button>
                         <button
-                            onClick={() => onUpdate({ ...settings, mode: 'working-set' })}
-                            className={`px-2 py-1 text-xs rounded transition-colors ${settings.mode === 'working-set'
+                            onClick={() => onUpdate({ ...currentSettings, mode: 'working-set' })}
+                            className={`px-2 py-1 text-xs rounded transition-colors ${currentSettings.mode === 'working-set'
                                 ? 'bg-red-100 text-red-700 font-medium'
                                 : 'bg-slate-50 text-slate-500 hover:bg-slate-100'
                                 }`}

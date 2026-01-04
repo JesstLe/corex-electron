@@ -10,33 +10,9 @@ import { TimerResolutionControl } from './TimerResolution';
 import { SmartTrimControl } from './SmartTrimControl';
 import { ThrottleListEditor } from './ThrottleListEditor';
 import { GameListEditor } from './GameListEditor';
+import { AppSettings, ProcessProfile } from '../../types';
 
-interface ProcessProfile {
-    name: string;
-    mode: string;
-    priority?: string;
-    timestamp: number;
-}
 
-interface DefaultRules {
-    enabled: boolean;
-}
-
-interface ProBalance {
-    enabled: boolean;
-    cpuThreshold: number;
-}
-
-interface AppSettings {
-    profiles?: ProcessProfile[];
-    defaultRules?: DefaultRules;
-    gameList?: string[];
-    proBalance?: ProBalance;
-    smartTrim: any;
-    throttleList?: string[];
-    launchOnStartup?: boolean;
-    closeToTray?: boolean;
-}
 
 interface SettingsPanelProps {
     mode: string;

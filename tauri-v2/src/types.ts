@@ -28,6 +28,12 @@ export interface ProcessProfile {
     timestamp: number;
 }
 
+export interface SmartTrimSettings {
+    enabled: boolean;
+    threshold: number;
+    mode: 'standby-only' | 'working-set';
+}
+
 export interface AppSettings {
     profiles?: ProcessProfile[];
     defaultRules?: {
@@ -38,11 +44,7 @@ export interface AppSettings {
         enabled: boolean;
         cpuThreshold: number;
     };
-    smartTrim?: {
-        enabled: boolean;
-        threshold: number;
-        mode: 'standby-only' | 'working-set';
-    };
+    smartTrim?: SmartTrimSettings;
     throttleList?: string[];
     launchOnStartup?: boolean;
     closeToTray?: boolean;
