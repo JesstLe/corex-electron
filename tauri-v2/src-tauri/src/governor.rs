@@ -14,6 +14,50 @@ use windows::{Win32::Foundation::*, Win32::System::ProcessStatus::*, Win32::Syst
 static LAST_CPU_TIMES: Lazy<RwLock<HashMap<u32, (u64, u64)>>> =
     Lazy::new(|| RwLock::new(HashMap::new()));
 
+/// 启用进程的调试权限 (SeDebugPrivilege)
+/// 这允许管理员账户下的进程访问任何其他进程的句柄
+#[cfg(windows)]
+pub fn enable_debug_privilege() -> AppResult<()> {
+    use windows::Win32::Security::*;
+    use windows::Win32::System::Threading::*;
+
+    unsafe {
+        let mut token_handle = HANDLE::default();
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &mut token_handle).is_err() {
+            return Err(AppError::SystemError("OpenProcessToken failed".to_string()));
+        }
+
+        let mut luid = LUID::default();
+        let privilege_name = windows::core::w!("SeDebugPrivilege");
+        if LookupPrivilegeValueW(None, privilege_name, &mut luid).is_err() {
+            let _ = CloseHandle(token_handle);
+            return Err(AppError::SystemError("LookupPrivilegeValue failed".to_string()));
+        }
+
+        let mut tp = TOKEN_PRIVILEGES {
+            PrivilegeCount: 1,
+            Privileges: [LUID_AND_ATTRIBUTES {
+                Luid: luid,
+                Attributes: SE_PRIVILEGE_ENABLED,
+            }],
+        };
+
+        if AdjustTokenPrivileges(token_handle, false, Some(&mut tp), 0, None, None).is_err() {
+            let _ = CloseHandle(token_handle);
+            return Err(AppError::SystemError("AdjustTokenPrivileges failed".to_string()));
+        }
+
+        let _ = CloseHandle(token_handle);
+        tracing::info!("Successfully enabled SeDebugPrivilege");
+        Ok(())
+    }
+}
+
+#[cfg(not(windows))]
+pub fn enable_debug_privilege() -> AppResult<()> {
+    Ok(())
+}
+
 // ============================================================================
 // 进程快照
 // ============================================================================
@@ -155,7 +199,7 @@ fn get_process_details(pid: u32) -> Option<(String, u64)> {
 pub async fn set_priority(pid: u32, level: PriorityLevel) -> AppResult<()> {
     tokio::task::spawn_blocking(move || unsafe {
         let handle = OpenProcess(PROCESS_SET_INFORMATION, false, pid)
-            .map_err(|e| AppError::ProcessNotFound(pid))?;
+            .map_err(|_| AppError::ProcessNotFound(pid))?;
 
         let priority_class = match level {
             PriorityLevel::Idle => IDLE_PRIORITY_CLASS,
@@ -186,7 +230,7 @@ pub async fn set_priority(_pid: u32, _level: PriorityLevel) -> AppResult<()> {
 pub async fn kill_process(pid: u32) -> AppResult<()> {
     tokio::task::spawn_blocking(move || unsafe {
         let handle = OpenProcess(PROCESS_TERMINATE, false, pid)
-            .map_err(|e| AppError::ProcessNotFound(pid))?;
+            .map_err(|_| AppError::ProcessNotFound(pid))?;
 
         if TerminateProcess(handle, 1).is_err() {
             let _ = CloseHandle(handle);
@@ -391,7 +435,7 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
         sys.refresh_processes(ProcessesToUpdate::All);
 
         let mut trimmed_count = 0u32;
-        let mut total_freed = 0u64;
+        let mut _total_freed = 0u64;
 
         // 获取前台窗口进程 (避免清理)
         let foreground_pid = get_foreground_window_pid().unwrap_or(0);
@@ -412,7 +456,7 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
 
             if let Ok(freed) = trim_memory_sync(pid_u32) {
                 trimmed_count += 1;
-                total_freed += freed;
+                _total_freed += freed;
             }
         }
 
@@ -430,12 +474,16 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
             freed_mb
         );
 
+        // 如果可用内存仍然较低或者用户设置了 Standby 清理，则尝试清理备用列表
+        // 注意：这需要更高权限，通常需要 SeProfileSingleProcessPrivilege
+        let _ = purge_standby_list();
+
         Ok(serde_json::json!({
             "success": true,
             "freedMB": freed_mb,
             "processesTrimed": trimmed_count,
             "message": if freed_mb > 0 {
-                format!("已释放 {} MB 内存", freed_mb)
+                format!("已释放 {} MB 内存 (含备用列表流量化)", freed_mb)
             } else {
                 "内存已优化".to_string()
             }
@@ -443,6 +491,44 @@ pub async fn clear_system_memory() -> AppResult<serde_json::Value> {
     })
     .await
     .map_err(|e| AppError::SystemError(e.to_string()))?
+}
+
+/// 清理系统备用列表 (Standby List)
+#[cfg(windows)]
+fn purge_standby_list() -> Result<(), String> {
+    use windows::Win32::System::Memory::*;
+
+    // 手动定义 NT 常量和函数，因为 windows-rs 可能未完全暴露 WDK/Internal API
+    const SYSTEM_MEMORY_LIST_INFORMATION: i32 = 80;
+    const MEMORY_PURGE_STANDBY_LIST: u32 = 4;
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtSetSystemInformation(
+            system_information_class: i32,
+            system_information: *const std::ffi::c_void,
+            system_information_length: u32,
+        ) -> i32;
+    }
+
+    unsafe {
+        // 1. 尝试通过 SetSystemFileCacheSize 清理系统文件缓存和所有进程的工作集
+        let _ = SetSystemFileCacheSize(usize::MAX, usize::MAX, 0);
+
+        // 2. 调用 NtSetSystemInformation 清理 Standby List
+        let command: u32 = MEMORY_PURGE_STANDBY_LIST;
+        let status = NtSetSystemInformation(
+            SYSTEM_MEMORY_LIST_INFORMATION,
+            &command as *const _ as *const std::ffi::c_void,
+            std::mem::size_of::<u32>() as u32,
+        );
+
+        if status != 0 {
+            return Err(format!("NtSetSystemInformation failed with status: 0x{:X}", status));
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(not(windows))]

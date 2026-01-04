@@ -3,8 +3,8 @@
 //! CPU 拓扑检测、GPU 识别、系统监控
 
 use crate::{AppError, AppResult, CpuTopology, CpuVendor, MemoryInfo};
-use once_cell::sync::Lazy;
-use parking_lot::RwLock;
+// use once_cell::sync::Lazy;
+// use parking_lot::RwLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(windows)]
@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static CPU_MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// 上一次的 CPU 时间 (用于计算使用率)
-static LAST_CPU_TIMES: Lazy<RwLock<Vec<(u64, u64)>>> = Lazy::new(|| RwLock::new(Vec::new()));
+// static LAST_CPU_TIMES: Lazy<RwLock<Vec<(u64, u64)>>> = Lazy::new(|| RwLock::new(Vec::new()));
 
 // ============================================================================
 // CPU 信息

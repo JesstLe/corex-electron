@@ -1,7 +1,7 @@
 use crate::ProcessInfo;
-use once_cell::sync::Lazy;
-use parking_lot::RwLock;
-use std::collections::HashMap;
+// use once_cell::sync::Lazy;
+// use parking_lot::RwLock;
+// use std::collections::HashMap;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -17,7 +17,7 @@ use windows::Win32::Foundation::*;
 use windows::Win32::System::Threading::*; // For GetProcessMemoryInfo if needed, or stick to sysinfo for basic mem
 
 // Shared state for CPU usage calculation
-static LAST_CPU_TIMES: Lazy<RwLock<HashMap<u32, u64>>> = Lazy::new(|| RwLock::new(HashMap::new()));
+// static LAST_CPU_TIMES: Lazy<RwLock<HashMap<u32, u64>>> = Lazy::new(|| RwLock::new(HashMap::new()));
 
 pub struct ProcessMonitor {
     running: Arc<AtomicBool>,
@@ -107,10 +107,11 @@ impl ProcessMonitor {
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
 
-                // ProBalance Watchdog & Profile Enforcement Check
+                // ProBalance Watchdog, Profile Enforcement & Smart Trim Check
                 tauri::async_runtime::block_on(async {
                     crate::watchdog::enforce_profiles(&processes).await;
                     crate::watchdog::check_and_restrain(&processes).await;
+                    crate::watchdog::check_and_trim_memory().await;
                 });
 
                 // Emit event

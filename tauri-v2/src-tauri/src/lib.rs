@@ -7,6 +7,7 @@ pub mod hardware;
 pub mod hardware_topology;
 pub mod monitor;
 pub mod power;
+pub mod security;
 pub mod thread;
 pub mod tweaks;
 pub mod watchdog;
@@ -311,6 +312,8 @@ pub struct AppConfig {
     pub pro_balance: ProBalanceConfig,
     /// 后台限制列表
     pub throttle_list: Vec<String>,
+    /// 激活授权
+    pub license: Option<String>,
 }
 
 impl Default for AppConfig {
@@ -357,6 +360,7 @@ impl Default for AppConfig {
             smart_trim: SmartTrimConfig::default(),
             pro_balance: ProBalanceConfig::default(),
             throttle_list: Vec::new(),
+            license: None,
         }
     }
 }

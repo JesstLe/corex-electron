@@ -7,7 +7,7 @@
 use task_nexus_lib::{
     config, governor, hardware, hardware_topology, power, thread, tweaks, AppError,
 };
-use tauri::AppHandle;
+// use tauri::AppHandle;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[cfg(windows)]
@@ -365,12 +365,33 @@ async fn stop_cpu_monitor() -> Result<bool, String> {
     Ok(true)
 }
 
+/// 获取当前机器码
+#[tauri::command]
+async fn get_machine_code() -> Result<String, String> {
+    Ok(task_nexus_lib::security::get_machine_code())
+}
+
+/// 激活软件
+#[tauri::command]
+async fn activate_license(key: String) -> Result<bool, String> {
+    if task_nexus_lib::security::verify_license(&key) {
+        config::set_config_value("license", serde_json::Value::String(key))
+            .await
+            .map(|_| true)
+            .map_err(|e| e.to_string())
+    } else {
+        Err("激活码无效，请检查后重试".to_string())
+    }
+}
+
 /// 获取许可证状态
 #[tauri::command]
 async fn get_license_status() -> Result<serde_json::Value, String> {
+    let activated = task_nexus_lib::security::check_activation_status().await;
+    let machine_code = task_nexus_lib::security::get_machine_code();
     Ok(serde_json::json!({
-        "activated": true,
-        "type": "Ultimate"
+        "activated": activated,
+        "machineCode": machine_code
     }))
 }
 
@@ -402,6 +423,9 @@ pub fn run() {
             if let Err(e) = config::init_config(app_handle) {
                 tracing::error!("Failed to init config: {}", e);
             }
+
+            // Enable SeDebugPrivilege for maximum optimization capability
+            let _ = governor::enable_debug_privilege();
 
             // Start Monitor
             monitor_clone.start(app.handle().clone());
@@ -462,6 +486,8 @@ pub fn run() {
             // CPU 监控
             start_cpu_monitor,
             stop_cpu_monitor,
+            get_machine_code,
+            activate_license,
             get_license_status,
         ])
         .run(tauri::generate_context!())

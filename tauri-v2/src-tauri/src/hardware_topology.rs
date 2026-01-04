@@ -108,7 +108,7 @@ pub fn get_cpu_topology() -> Result<Vec<LogicalCore>, String> {
 
     // 4. 整合信息 (Consolidation)
     for core in temp_cores {
-        let mut core_type = CoreType::Unknown;
+        let core_type;
 
         // AMD V-Cache 判断逻辑
         if has_large_l3 {

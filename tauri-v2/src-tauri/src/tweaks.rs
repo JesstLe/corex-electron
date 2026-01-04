@@ -182,7 +182,7 @@ pub fn set_timer_resolution(res_ms: f64) -> AppResult<f64> {
         let mut min: u32 = 0;
         let mut max: u32 = 0;
         let mut cur: u32 = 0;
-        NtQueryTimerResolution(&mut min, &mut max, &mut cur);
+        let _ = NtQueryTimerResolution(&mut min, &mut max, &mut cur);
 
         // 如果 res_ms 为 0，则尝试恢复默认 (通常是请求 min 或取消请求)
         // 实际上 NtSetTimerResolution 的第二个参数是 Set (boolean)

@@ -29,8 +29,25 @@ pub fn init_config<R: Runtime>(app: &AppHandle<R>) -> AppResult<()> {
 
     // 加载或创建配置
     let config = if config_path.exists() {
-        let content = std::fs::read_to_string(&config_path)?;
-        serde_json::from_str(&content).unwrap_or_default()
+        let raw_content = std::fs::read_to_string(&config_path)?;
+        
+        // 尝试使用安全模块解密 (Gaming Security Shield)
+        match crate::security::decrypt_data(&raw_content) {
+            Ok(decrypted) => {
+                tracing::info!("Config decrypted successfully");
+                serde_json::from_str(&decrypted).unwrap_or_default()
+            }
+            Err(e) => {
+                // 如果解密失败，检查是否是旧版的明文 JSON
+                if raw_content.trim().starts_with('{') {
+                    tracing::warn!("Plain-text config detected, migrating to encrypted format...");
+                    serde_json::from_str(&raw_content).unwrap_or_default()
+                } else {
+                    tracing::error!("Failed to decrypt config and not valid JSON: {:?}. Using default.", e);
+                    AppConfig::default()
+                }
+            }
+        }
     } else {
         AppConfig::default()
     };
@@ -51,7 +68,10 @@ fn save_config() -> AppResult<()> {
         .ok_or(AppError::ConfigError("Config path not set".to_string()))?;
 
     let json = serde_json::to_string_pretty(&*config.read())?;
-    std::fs::write(path, json)?;
+    
+    // 使用安全模块加密 (Gaming Security Shield)
+    let encrypted = crate::security::encrypt_data(&json)?;
+    std::fs::write(path, encrypted)?;
 
     Ok(())
 }
@@ -117,6 +137,13 @@ pub async fn set_config_value(key: &str, value: serde_json::Value) -> AppResult<
             "proBalance" => {
                 if let Ok(config) = serde_json::from_value(value) {
                     cfg.pro_balance = config;
+                }
+            }
+            "license" => {
+                if let Some(v) = value.as_str() {
+                    cfg.license = Some(v.to_string());
+                } else if value.is_null() {
+                    cfg.license = None;
                 }
             }
             "width" => {
@@ -222,21 +249,37 @@ pub async fn get_profiles() -> AppResult<Vec<ProcessProfile>> {
 pub fn export_config_to_path(path: PathBuf) -> AppResult<()> {
     let config = CONFIG.get().ok_or(AppError::ConfigError("Config not initialized".to_string()))?;
     let json = serde_json::to_string_pretty(&*config.read())?;
-    std::fs::write(path, json)?;
+    
+    // 导出时同样进行硬件绑定加密，即使离线也不怕被读取
+    let encrypted = crate::security::encrypt_data(&json)?;
+    std::fs::write(path, encrypted)?;
     Ok(())
 }
 
 /// 从指定路径导入配置
 pub fn import_config_from_path(path: PathBuf) -> AppResult<()> {
-    let content = std::fs::read_to_string(&path)?;
-    let new_config: AppConfig = serde_json::from_str(&content)
+    let raw_content = std::fs::read_to_string(&path)?;
+    
+    // 优先尝试解密，若失败则检查是否为明文（兼容旧版本导出）
+    let json_content = match crate::security::decrypt_data(&raw_content) {
+        Ok(decrypted) => decrypted,
+        Err(_) => {
+            if raw_content.trim().starts_with('{') {
+                raw_content
+            } else {
+                return Err(AppError::ConfigError("无法识别的配置文件格式或硬件环境不匹配".to_string()));
+            }
+        }
+    };
+
+    let new_config: AppConfig = serde_json::from_str(&json_content)
         .map_err(|e| AppError::ConfigError(format!("Invalid config file: {}", e)))?;
     
     // Update global config
     let config = CONFIG.get().ok_or(AppError::ConfigError("Config not initialized".to_string()))?;
     *config.write() = new_config;
     
-    // Save to default location to persist
+    // Save to default location (will automatically be encrypted)
     save_config()?;
     
     Ok(())

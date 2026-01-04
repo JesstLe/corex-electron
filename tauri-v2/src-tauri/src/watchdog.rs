@@ -8,8 +8,45 @@ use std::collections::HashSet;
 static RESTRAINED_PIDS: Lazy<RwLock<HashSet<u32>>> = Lazy::new(|| RwLock::new(HashSet::new()));
 
 // Debounce/Cool-down logic (prevent rapid toggling)
-static LAST_ACTION_TIME: Lazy<RwLock<std::time::Instant>> =
-    Lazy::new(|| RwLock::new(std::time::Instant::now()));
+// static LAST_ACTION_TIME: Lazy<RwLock<std::time::Instant>> =
+//     Lazy::new(|| RwLock::new(std::time::Instant::now()));
+
+static LAST_TRIM_TIME: Lazy<RwLock<std::time::Instant>> =
+    Lazy::new(|| RwLock::new(std::time::Instant::now() - std::time::Duration::from_secs(3600)));
+
+pub async fn check_and_trim_memory() {
+    let config = config::get_config().await.unwrap_or_default();
+    let trim_config = config.smart_trim;
+
+    if !trim_config.enabled {
+        return;
+    }
+
+    // Check interval (default 30s)
+    let last_trim = LAST_TRIM_TIME.read();
+    if last_trim.elapsed().as_secs() < trim_config.interval as u64 {
+        return;
+    }
+    drop(last_trim);
+
+    // Get current memory status
+    if let Ok(mem) = crate::hardware::get_memory_info().await {
+        if mem.percent >= trim_config.threshold {
+            tracing::info!(
+                "Smart Trim: Memory usage {}% exceeds threshold {}%. Triggering optimization...",
+                mem.percent,
+                trim_config.threshold
+            );
+            
+            // Perform cleanup
+            let _ = governor::clear_system_memory().await;
+            
+            // Update last trim time
+            let mut last_trim = LAST_TRIM_TIME.write();
+            *last_trim = std::time::Instant::now();
+        }
+    }
+}
 
 pub async fn enforce_profiles(processes: &[ProcessInfo]) {
     let profiles = config::get_profiles().await.unwrap_or_default();

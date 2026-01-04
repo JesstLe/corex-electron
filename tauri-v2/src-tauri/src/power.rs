@@ -196,7 +196,7 @@ pub fn open_power_settings() -> AppResult<bool> {
 
 /// 从字符串中提取 GUID
 fn extract_guid(s: &str) -> Option<String> {
-    let re_pattern = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
+    // let re_pattern = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}";
 
     // 简单的手动匹配
     for word in s.split_whitespace() {

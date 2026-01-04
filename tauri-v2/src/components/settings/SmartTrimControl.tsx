@@ -46,7 +46,7 @@ export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) 
 
     const handleInputBlur = () => {
         let val = localThreshold;
-        if (val < 50) val = 50;
+        if (val < 20) val = 20;
         if (val > 95) val = 95;
         setLocalThreshold(val);
         onUpdate({
@@ -79,7 +79,7 @@ export function SmartTrimControl({ settings, onUpdate }: SmartTrimControlProps) 
                     <div className="flex-1 flex items-center gap-2">
                         <input
                             type="range"
-                            min="50"
+                            min="20"
                             max="95"
                             step="1"
                             value={localThreshold}
