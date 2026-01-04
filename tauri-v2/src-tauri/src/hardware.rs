@@ -266,13 +266,22 @@ pub async fn start_cpu_monitor(app: tauri::AppHandle) {
 
         while CPU_MONITOR_RUNNING.load(Ordering::SeqCst) {
             sys.refresh_cpu_all();
+            sys.refresh_memory();
 
             let loads: Vec<f32> = sys.cpus().iter().map(|c| c.cpu_usage()).collect();
+            
+            // System Memory Load
+            let total_mem = sys.total_memory();
+            let used_mem = total_mem.saturating_sub(sys.available_memory());
+            let mem_percent = if total_mem > 0 {
+                (used_mem as f64 / total_mem as f64 * 100.0) as f32
+            } else {
+                0.0
+            };
 
             // 发送到前端
-            if let Err(e) = app.emit("cpu-load-update", &loads) {
-                tracing::warn!("Failed to emit cpu-load-update: {}", e);
-            }
+            let _ = app.emit("cpu-load-update", &loads);
+            let _ = app.emit("memory-load-update", mem_percent);
 
             tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
         }

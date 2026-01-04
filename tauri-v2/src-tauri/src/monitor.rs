@@ -48,6 +48,7 @@ impl ProcessMonitor {
                 let users = sysinfo::Users::new_with_refreshed_list();
 
                 let mut processes = Vec::new();
+                let core_count = sys.cpus().len() as f32;
 
                 for (pid, process) in sys.processes() {
                     let pid_u32 = pid.as_u32();
@@ -55,7 +56,10 @@ impl ProcessMonitor {
                     // Basic Info from sysinfo
                     let name = process.name().to_string_lossy().to_string();
                     let memory_usage = process.memory();
-                    let cpu_usage = process.cpu_usage();
+                    let mut cpu_usage = process.cpu_usage();
+                    if core_count > 0.0 {
+                        cpu_usage /= core_count;
+                    }
                     let path = process
                         .exe()
                         .map(|p| p.to_string_lossy().to_string())

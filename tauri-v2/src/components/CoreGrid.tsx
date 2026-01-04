@@ -56,9 +56,7 @@ export default function CoreGrid({
             unlisten = await listen('cpu-load-update', (event) => {
                 if (Array.isArray(event.payload)) setCpuLoads(event.payload);
             });
-            invoke<number[]>('get_cpu_loads').then(setCpuLoads).catch(() => {
-                setCpuLoads(Array.from({ length: cores.length }, () => Math.random() * 100));
-            });
+            invoke<number[]>('get_cpu_loads').then(setCpuLoads).catch(console.error);
         }
         setup();
         return () => { if (unlisten) unlisten(); };

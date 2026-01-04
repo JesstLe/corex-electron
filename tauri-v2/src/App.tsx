@@ -8,7 +8,7 @@ import SystemOptimizer from './components/SystemOptimizer';
 import AdvancedPanel from './components/AdvancedPanel';
 import Toast, { ToastContainer } from './components/Toast';
 import ActivationDialog from './components/ActivationDialog';
-import { Activity, Settings, Zap, Terminal } from 'lucide-react';
+import { Activity, Settings, Zap, SlidersHorizontal } from 'lucide-react';
 import { getCpuArchitecture } from './data/cpuDatabase';
 import { invoke } from '@tauri-apps/api/core';
 import {
@@ -325,7 +325,7 @@ function App() {
                         <Zap size={16} /><span>一键优化</span>
                     </button>
                     <button onClick={() => setActiveTab('advanced')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'advanced' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
-                        <Terminal size={16} /><span>高级极客</span>
+                        <SlidersHorizontal size={16} /><span>高级选项</span>
                     </button>
                 </div>
             </div>

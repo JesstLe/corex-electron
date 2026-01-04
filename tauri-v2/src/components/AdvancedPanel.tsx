@@ -1,5 +1,5 @@
 import React from 'react';
-import { Terminal, Shield, Cpu, Activity, Cpu as CpuIcon, Layers, Zap } from 'lucide-react';
+import { SlidersHorizontal, Shield, Cpu, Activity, Cpu as CpuIcon, Layers, Zap } from 'lucide-react';
 
 export default function AdvancedPanel() {
     const features = [
@@ -41,10 +41,10 @@ export default function AdvancedPanel() {
         <div className="glass rounded-2xl p-6 shadow-soft h-full flex flex-col space-y-6">
             <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 flex items-center justify-center">
-                    <Terminal size={20} className="text-white" />
+                    <SlidersHorizontal size={20} className="text-white" />
                 </div>
                 <div>
-                    <h3 className="font-semibold text-slate-700">高级极客工具箱</h3>
+                    <h3 className="font-semibold text-slate-700">高级选项工具箱</h3>
                     <p className="text-xs text-slate-400">底层参数深度调优，适合高级用户 (实验性功能)</p>
                 </div>
             </div>

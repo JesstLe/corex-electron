@@ -25,6 +25,15 @@ async fn get_cpu_info() -> Result<serde_json::Value, String> {
         .map_err(|e: AppError| e.to_string())
 }
 
+/// 获取每个核心的实时负载
+#[tauri::command]
+async fn get_cpu_loads() -> Result<Vec<f32>, String> {
+    use sysinfo::System;
+    let mut sys = System::new();
+    sys.refresh_cpu_all();
+    Ok(sys.cpus().iter().map(|c| c.cpu_usage()).collect())
+}
+
 /// 获取 CPU 拓扑
 #[tauri::command]
 async fn get_cpu_topology() -> Result<Vec<hardware_topology::LogicalCore>, String> {
@@ -391,12 +400,19 @@ pub fn run() {
 
             // Start Monitor
             monitor_clone.start(app.handle().clone());
+            
+            // Start HW Monitor (CPU/Mem/Gears)
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                hardware::start_cpu_monitor(app_handle).await;
+            });
 
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             // CPU 信息
             get_cpu_info,
+            get_cpu_loads,
             get_cpu_topology,
             // 进程管理
             get_processes,
