@@ -14,7 +14,7 @@ description: Build and release portable EXE to tn_new folder
 
 ## Current Version
 
-**V3.0.5** (Released 2026-01-04)
+**V3.0.4** (Released 2026-01-04)
 
 ## Build Steps
 
