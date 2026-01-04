@@ -540,40 +540,13 @@ export default function SettingsPanel({
 
   const modes = [
     { id: 'dynamic', label: '默认使用', icon: Zap, desc: '系统自动接管，平衡性能与功耗' },
-    { id: 'static', label: '固定绑核', icon: Lock, desc: '强制锁定单核，消除切换延迟' },
     { id: 'd2', label: '笔记本狂暴', icon: Scale, desc: '深度优化温控与性能，消除积热掉帧' },
     { id: 'd3', label: '极致狂暴', icon: Zap, desc: '卓越性能电源 + 实时优先级，隔离系统中断' },
   ];
 
   return (
     <div className="space-y-4">
-      {/* 优先核心选择 */}
-      <div className="glass rounded-2xl p-5 shadow-soft">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-slate-700">优先核心</h4>
-            <p className="text-xs text-slate-400 mt-0.5">游戏优先运行在指定核心，其他核心辅助</p>
-          </div>
-          <div className="relative">
-            <select
-              className="appearance-none pl-4 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 outline-none focus:ring-2 focus:ring-violet-500/30 cursor-pointer hover:bg-slate-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              value={primaryCore}
-              onChange={(e) => onPrimaryCoreChange(e.target.value)}
-              disabled={availableCores.length === 0}
-            >
-              <option value="auto">自动</option>
-              {availableCores.map((i) => (
-                <option key={i} value={i}>核心 {i}</option>
-              ))}
-            </select>
-            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
-          </div>
-        </div>
-        {availableCores.length === 0 && (
-          <p className="text-xs text-amber-600 mt-2">请先在"核心调度"页面选择核心</p>
-        )}
-      </div>
-
+      {/* 优先核心选择 - 已隐藏 */}
       {/* 模式选择 */}
       <div className="glass rounded-2xl p-5 shadow-soft">
         <h4 className="font-medium text-slate-700 mb-4">调度模式</h4>
