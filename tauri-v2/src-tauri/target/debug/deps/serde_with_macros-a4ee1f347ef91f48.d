@@ -1,8 +1,0 @@
-E:\Documents\WorkSpace\Task_NeXus\Task_NeXus\tauri-v2\src-tauri\target\debug\deps\serde_with_macros-a4ee1f347ef91f48.d: C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\lib.rs C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\apply.rs C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\lazy_bool.rs C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\utils.rs
-
-E:\Documents\WorkSpace\Task_NeXus\Task_NeXus\tauri-v2\src-tauri\target\debug\deps\serde_with_macros-a4ee1f347ef91f48.dll: C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\lib.rs C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\apply.rs C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\lazy_bool.rs C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\utils.rs
-
-C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\lib.rs:
-C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\apply.rs:
-C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\lazy_bool.rs:
-C:\Users\Administrator\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\serde_with_macros-3.16.1\src\utils.rs:
