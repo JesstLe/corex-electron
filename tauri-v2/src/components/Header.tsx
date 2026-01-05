@@ -10,7 +10,7 @@ export default function Header({ cpuModel }: HeaderProps) {
             <div className="flex flex-col items-center justify-center gap-1">
                 {/* Logo and Title Section */}
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20 animate-pulse-slow">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 via-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/20">
                         <span className="text-white font-black text-sm tracking-tighter">TN</span>
                     </div>
                     <h1 className="text-lg font-bold bg-gradient-to-r from-slate-900 to-slate-700 bg-clip-text text-transparent tracking-tight">
