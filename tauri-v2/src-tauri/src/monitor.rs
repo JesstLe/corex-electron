@@ -8,6 +8,7 @@ use std::sync::{
 };
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
+use std::collections::HashMap;
 
 #[cfg(windows)]
 use windows::Win32::Foundation::*;
@@ -39,21 +40,39 @@ impl ProcessMonitor {
 
         std::thread::spawn(move || {
             let mut sys = sysinfo::System::new_all();
+            
+            // OPTIMIZATION: Cache users list (Refresh every 60s)
+            let mut users = sysinfo::Users::new_with_refreshed_list();
+            
+            // OPTIMIZATION: Cache process details (Refresh every 3s)
+            let mut process_details_cache: HashMap<u32, (String, String, u32)> = HashMap::new();
+            
+            let mut iteration_count: u64 = 0;
 
             while running.load(Ordering::SeqCst) {
                 let start_time = std::time::Instant::now();
+                iteration_count = iteration_count.wrapping_add(1);
 
-                // Refresh processes
+                // 1. Refresh Users (Low frequency)
+                if iteration_count % 60 == 0 {
+                     users = sysinfo::Users::new_with_refreshed_list();
+                }
+
+                // 2. Refresh Processes (CPU/Mem always refresh)
                 sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
-                let users = sysinfo::Users::new_with_refreshed_list();
-
+                
                 let mut processes = Vec::new();
                 let core_count = sys.cpus().len() as f32;
+                
+                // Determine if we should refresh heavy WinAPI details this tick
+                // Throttle: Refresh every 3rd tick (approx 3s if loop is 1s, wait, loop is 1s sleep)
+                // If tick is 1s, then iteration % 3 == 0 means every 3 seconds.
+                let should_refresh_details = iteration_count % 3 == 0;
 
                 for (pid, process) in sys.processes() {
                     let pid_u32 = pid.as_u32();
 
-                    // Basic Info from sysinfo
+                    // Basic Info from sysinfo (Fast)
                     let name = process.name().to_string_lossy().to_string();
                     let memory_usage = process.memory();
                     let mut cpu_usage = process.cpu_usage();
@@ -72,15 +91,24 @@ impl ProcessMonitor {
                         None => "System".to_string(),
                     };
 
-                    // WinAPI for specifics
-                    let (priority, affinity, _thread_count_win) = get_process_details_win(pid_u32);
-
-                    // Fallback to sysinfo thread count if WinAPI not strictly needed for that,
-                    // but usually sysinfo doesn't provide thread count on all platforms easily?
-                    // process.tasks is unsupported on Windows in sysinfo for now?
-                    // sysinfo 0.31 has ??? Let's use WinAPI for thread count to be safe/consistent with requirement.
-                    // Actually sysinfo process struct doesn't expose thread count directly in simple way?
-                    // It has `tasks` but often None on Windows.
+                    // Optimised WinAPI Calls
+                    let details = if should_refresh_details {
+                        let d = get_process_details_win(pid_u32);
+                        process_details_cache.insert(pid_u32, d.clone());
+                        d
+                    } else {
+                        // Use cache or fallback if new process
+                        if let Some(cached) = process_details_cache.get(&pid_u32) {
+                             cached.clone()
+                        } else {
+                             // New process appearing in-between throttles? Fetch it once.
+                             let d = get_process_details_win(pid_u32);
+                             process_details_cache.insert(pid_u32, d.clone());
+                             d
+                        }
+                    };
+                    
+                    let (priority, affinity, _thread_count_win) = details;
 
                     // Get parent PID for tree view
                     let parent_pid = process.parent().map(|p| p.as_u32());
@@ -97,6 +125,12 @@ impl ProcessMonitor {
                         user,
                         path,
                     });
+                }
+                
+                // Cleanup cache for dead processes (Optional: do it every 60s to save cycles)
+                if iteration_count % 60 == 0 {
+                    let current_pids: Vec<u32> = processes.iter().map(|p| p.pid).collect();
+                    process_details_cache.retain(|&k, _| current_pids.contains(&k));
                 }
 
                 // Sorting (optional here, but backend sorting saves frontend work?

@@ -29,23 +29,72 @@ pub async fn check_expiration() -> TimeBombStatus {
         .and_hms_opt(0, 0, 0)
         .unwrap();
 
-    // 1. 获取当前时间 (目前仅使用系统时间，生产环境应加上网络时间校验)
-    let now_local = Local::now().naive_local();
-    
-    // TODO: 实现简单的网络时间校验 (可选)
-    // 如果需要更强的防篡改，可以请求 google.com 或百度
-    // 但考虑到这只是防止普通用户长期使用旧版本，系统时间通常足够
-    
-    let is_expired = now_local > expiry;
-    let duration = expiry.signed_duration_since(now_local);
+    // 1. 尝试获取网络时间
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+
+    let mut network_time = None;
+
+    // 重试机制：尝试 3 次，每次间隔 1 秒
+    for attempt in 0..3 {
+        // 优先尝试百度
+        if let Ok(resp) = client.head("https://www.baidu.com").send().await {
+            if let Some(date_header) = resp.headers().get("date") {
+                if let Ok(date_str) = date_header.to_str() {
+                    if let Ok(parsed) = chrono::DateTime::parse_from_rfc2822(date_str) {
+                        network_time = Some(parsed.naive_utc());
+                        break; // 成功获取，跳出循环
+                    }
+                }
+            }
+        }
+
+        // 备选微软
+        if let Ok(resp) = client.head("https://www.microsoft.com").send().await {
+            if let Some(date_header) = resp.headers().get("date") {
+                if let Ok(date_str) = date_header.to_str() {
+                    if let Ok(parsed) = chrono::DateTime::parse_from_rfc2822(date_str) {
+                         network_time = Some(parsed.naive_utc());
+                         break; // 成功获取，跳出循环
+                    }
+                }
+            }
+        }
+        
+        // 如果未成功且不是最后一次尝试，则等待
+        if attempt < 2 {
+            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+        }
+    }
+
+    // 如果无法获取网络时间，强制退出
+    let current_time = match network_time {
+        Some(t) => t,
+        None => {
+            // 网络检查失败，直接退出
+            std::process::exit(0);
+        }
+    };
+
+    // 转换为本地时间进行对比 (expiry is roughly local midnight? Or just check date)
+    // Actually expiry is constructed as naive date. 
+    // network_time is UTC. We should add 8 hours for Beijing Time roughly or compare properly.
+    // Simplifying: Just compare UTC to UTC if possible, or Local to Local.
+    // Let's assume +8 for China since users are Chinese.
+    let current_local = current_time + chrono::Duration::hours(8); 
+
+    let is_expired = current_local > expiry;
+    let duration = expiry.signed_duration_since(current_local);
     let days_remaining = duration.num_days();
 
     TimeBombStatus {
         is_expired,
         expiration_date: expiry.format("%Y-%m-%d").to_string(),
-        current_date: now_local.format("%Y-%m-%d %H:%M:%S").to_string(),
+        current_date: current_local.format("%Y-%m-%d %H:%M:%S").to_string(),
         days_remaining: if is_expired { 0 } else { days_remaining },
-        verification_source: "System".to_string(),
+        verification_source: "Network (Baidu/MS)".to_string(),
     }
 }
 

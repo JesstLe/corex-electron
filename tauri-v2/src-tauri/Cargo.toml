@@ -29,6 +29,7 @@ tokio = { version = "1", features = ["sync", "time", "rt-multi-thread"] }
 parking_lot = "0.12"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
 tauri-plugin-dialog = "2"
 aes-gcm = "0.10"
 machine-uid = "0.3"
@@ -42,6 +43,7 @@ chrono = "0.4"
 dirs = "5.0"
 winreg = "0.52"
 shell-words = "1.1"
+reqwest = { version = "0.11", features = ["json"] }
 
 
 [target.'cfg(windows)'.dependencies]
@@ -72,7 +74,6 @@ default = []
 portable = []
 
 [profile.release]
-panic = "abort"
 codegen-units = 1
 lto = true
 opt-level = "s"

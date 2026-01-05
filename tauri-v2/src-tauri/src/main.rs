@@ -578,15 +578,31 @@ async fn check_expiration() -> Result<task_nexus_lib::security::TimeBombStatus, 
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    // 初始化日志
+    // ------------------------------------------------------------------------
+    // Automatic Error Logging Setup
+    // ------------------------------------------------------------------------
+    
+    // 1. Configure File Appender (Rolling daily)
+    // Use BLOCKING appender to ensure crash logs are written before exit.
+    let file_appender = tracing_appender::rolling::daily("logs", "task-nexus.log");
+
+    // 2. Init Tracing (Stdout + File)
     tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::fmt::layer().with_writer(std::io::stdout))
+        .with(tracing_subscriber::fmt::layer().with_writer(file_appender).with_ansi(false)) // File output
         .with(tracing_subscriber::EnvFilter::new(
             std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
         ))
         .init();
 
-    tracing::info!("Task Nexus starting...");
+    // 3. Set Custom Panic Hook to Log Crashes
+    std::panic::set_hook(Box::new(|info| {
+        let backtrace = std::backtrace::Backtrace::capture();
+        tracing::error!("CRITICAL PANIC: {:?}\nBacktrace:\n{:?}", info, backtrace);
+        eprintln!("Application Panicked: {:?}", info);
+    }));
+
+    tracing::info!("Task Nexus starting (Logging to logs/task-nexus.log)...");
 
     let monitor = std::sync::Arc::new(task_nexus_lib::monitor::ProcessMonitor::new());
     let monitor_clone = monitor.clone();
