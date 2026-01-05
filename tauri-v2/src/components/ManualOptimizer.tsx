@@ -69,7 +69,6 @@ export default function ManualOptimizer({ processes, topology, showToast, onScan
                     </div>
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">手动精密调度</h2>
-                        <p className="text-sm text-slate-500">拒绝黑盒自动策略，把 CPU 核心控制权完全交给您</p>
                     </div>
                 </div>
 
