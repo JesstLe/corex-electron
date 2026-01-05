@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Play, Square, Activity, Save, ChevronDown, Zap } from 'lucide-react';
+import { Play, Square, Activity, Save, ChevronDown, Zap, RefreshCw } from 'lucide-react';
 import { CpuInfo } from '../types';
+import { invoke } from '@tauri-apps/api/core';
 
 interface ControlBarProps {
     status: string;
@@ -10,6 +11,7 @@ interface ControlBarProps {
     cpuInfo: CpuInfo | null;
     priority?: string;
     onPriorityChange: (p: string) => void;
+    showToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
 export default function ControlBar({
@@ -19,7 +21,8 @@ export default function ControlBar({
     onSaveProfile,
     cpuInfo,
     priority = 'Normal',
-    onPriorityChange
+    onPriorityChange,
+    showToast
 }: ControlBarProps) {
     const isRunning = status === 'active';
     const [showPriorityMenu, setShowPriorityMenu] = useState(false);
@@ -34,6 +37,20 @@ export default function ControlBar({
     ];
 
     const currentPriority = priorities.find(p => p.value === priority) || priorities[2];
+
+    // Clear Memory Logic
+    const [cleaning, setCleaning] = useState(false);
+    const handleClear = async () => {
+        setCleaning(true);
+        try {
+            await invoke('clear_memory');
+            showToast?.('系统内存已成功清理', 'success');
+        } catch (e) {
+            console.error('Clear memory failed:', e);
+            showToast?.(`清理失败: ${e}`, 'error');
+        }
+        setTimeout(() => setCleaning(false), 800); // Visual feedback delay
+    };
 
     return (
         <div className="flex items-center justify-between">
@@ -50,6 +67,16 @@ export default function ControlBar({
             </div>
 
             <div className="flex items-center gap-3">
+                <button
+                    onClick={handleClear}
+                    disabled={cleaning}
+                    className={`px-3 py-2.5 rounded-xl border border-slate-200 text-slate-500 hover:text-violet-600 hover:bg-violet-50 transition-all font-medium flex items-center gap-2 text-sm ${cleaning ? 'bg-slate-50 cursor-wait opacity-70' : ''}`}
+                    title="清理系统内存"
+                >
+                    <RefreshCw size={14} className={cleaning ? 'animate-spin' : ''} />
+                    <span className="hidden sm:inline">{cleaning ? '清理中' : '清理内存'}</span>
+                </button>
+
                 <div className="relative">
                     <button
                         onClick={() => setShowPriorityMenu(!showPriorityMenu)}

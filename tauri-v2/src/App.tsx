@@ -426,6 +426,7 @@ function App() {
                             cpuInfo={cpuInfo}
                             priority={priority}
                             onPriorityChange={setPriority}
+                            showToast={showToast}
                         />
                     </div>
                 </div>
