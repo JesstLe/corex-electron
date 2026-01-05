@@ -10,6 +10,7 @@ pub mod thread;
 pub mod config;
 pub mod monitor;
 pub mod ports;
+pub mod power;
 
 pub use types::*;
 pub use config::{AppConfig, set_auto_start};

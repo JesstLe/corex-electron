@@ -19,8 +19,35 @@ pub struct AppConfig {
 /// 单个进程配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProcessProfile {
-    pub affinity_mask: String,
-    pub priority: String,
+    pub affinity_mask: Option<String>,
+    pub priority: Option<String>,
+    pub thread_bind_core: Option<u32>,
+    pub ideal_core: Option<u32>,
+}
+
+impl ProcessProfile {
+    pub fn from_pending(p: &super::types::PendingProfile) -> Self {
+        Self {
+            affinity_mask: p.affinity_mask.map(|m| format!("0x{:X}", m)),
+            priority: p.priority.as_ref().map(|l| l.as_str().to_string()),
+            thread_bind_core: p.thread_bind_core,
+            ideal_core: p.ideal_core,
+        }
+    }
+
+    pub fn to_pending(&self) -> super::types::PendingProfile {
+        use std::str::FromStr;
+        super::types::PendingProfile {
+            affinity_mask: self.affinity_mask.as_ref().and_then(|s| {
+                u64::from_str_radix(s.trim_start_matches("0x"), 16).ok()
+            }),
+            priority: self.priority.as_ref().and_then(|s| {
+                super::types::PriorityLevel::from_str(s)
+            }),
+            thread_bind_core: self.thread_bind_core,
+            ideal_core: self.ideal_core,
+        }
+    }
 }
 
 impl AppConfig {

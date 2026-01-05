@@ -7,9 +7,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::Ordering;
 
 use crate::core::{
-    governor, thread, topology,
+    governor, thread, topology, power,
     PriorityLevel, CpuTopology, AppConfig, set_auto_start, PendingProfile, LiteProcess,
-    monitor::SystemMonitor
+    monitor::SystemMonitor, config::ProcessProfile
 };
 
 use super::{SHOW_WINDOW_FLAG, EXIT_FLAG, GUI_CONTEXT};
@@ -66,7 +66,7 @@ pub struct TNLiteApp {
     selected_cores: HashSet<usize>,
     processes: Vec<LiteProcess>,
     search_term: String,
-    last_refresh: std::time::Instant,
+    // last_refresh: std::time::Instant,
     topology: Option<CpuTopology>,
     config: AppConfig,
     status_msg: String,
@@ -75,6 +75,7 @@ pub struct TNLiteApp {
     game_keywords: Vec<String>,
     cpu_count: usize,
     is_hidden: bool,
+    power_plans: Vec<power::PowerPlan>,
 }
 
 impl TNLiteApp {
@@ -86,12 +87,12 @@ impl TNLiteApp {
         let topology = topology::get_cpu_topology().ok();
         let config = AppConfig::load();
         
-        Self {
+        let mut app = Self {
             monitor,
             selected_cores: (0..cpu_count).collect(),
             processes: Vec::new(),
             search_term: String::new(),
-            last_refresh: std::time::Instant::now(),
+            // last_refresh: std::time::Instant::now(),
             topology,
             config,
             status_msg: String::new(),
@@ -100,12 +101,22 @@ impl TNLiteApp {
             game_keywords: default_game_keywords(),
             cpu_count,
             is_hidden: false,
-        }
+            power_plans: Vec::new(),
+        };
+        app.refresh_data();
+        app.refresh_power_plans();
+        app
     }
 
     fn refresh_data(&mut self) {
         // 调用 Monitor 模块获取数据，实现 UI 与数据获取解耦
         self.processes = self.monitor.scan_processes(&self.search_term);
+    }
+
+    fn refresh_power_plans(&mut self) {
+        if let Ok(plans) = power::get_power_plans() {
+            self.power_plans = plans;
+        }
     }
 }
 
@@ -131,10 +142,7 @@ impl eframe::App for TNLiteApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
         
-        if self.last_refresh.elapsed() >= std::time::Duration::from_millis(1000) {
-            self.refresh_data();
-            self.last_refresh = std::time::Instant::now();
-        }
+        // Smart Refresh: We do NOT automatically refresh data here anymore.
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // 标题栏
@@ -278,11 +286,87 @@ impl eframe::App for TNLiteApp {
 
             ui.add_space(6.0);
 
+            // 电源管理面板
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.strong("电源管理");
+                    if ui.button("刷新").clicked() {
+                        self.refresh_power_plans();
+                        self.status_msg = "电源计划已刷新".to_string();
+                    }
+                });
+                ui.add_space(4.0);
+                
+                ui.horizontal(|ui| {
+                    ui.label("当前计划:");
+                    if let Some(active) = self.power_plans.iter().find(|p| p.is_active) {
+                        ui.label(egui::RichText::new(&active.name).color(egui::Color32::GREEN).strong());
+                    } else {
+                        ui.label("未知");
+                    }
+                    
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("导入计划").clicked() {
+                            if let Some(path) = rfd::FileDialog::new().add_filter("Power Plan", &["pow"]).pick_file() {
+                                if power::import_plan(&path.to_string_lossy()).is_ok() {
+                                    self.refresh_power_plans();
+                                    self.status_msg = "电源计划已导入".to_string();
+                                }
+                            }
+                        }
+                    });
+                });
+
+                ui.separator();
+
+                egui::ScrollArea::vertical().max_height(100.0).id_source("power_scroll").show(ui, |ui| {
+                    // Clone plans to avoid borrowing self while mutating self
+                    let plans = self.power_plans.clone();
+                    for plan in plans {
+                        ui.horizontal(|ui| {
+                            let name_text = if plan.is_active {
+                                egui::RichText::new(&plan.name).strong().color(egui::Color32::GREEN)
+                            } else {
+                                egui::RichText::new(&plan.name)
+                            };
+                            
+                            if ui.button(name_text).clicked() {
+                                if power::set_active_plan(&plan.guid).is_ok() {
+                                    self.refresh_power_plans();
+                                    self.status_msg = format!("已切换电源计划: {}", plan.name);
+                                }
+                            }
+
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                if !plan.is_active {
+                                    if ui.small_button("🗑").on_hover_text("删除").clicked() {
+                                        if power::delete_plan(&plan.guid).is_ok() {
+                                            self.refresh_power_plans();
+                                            self.status_msg = format!("已删除电源计划: {}", plan.name);
+                                        } else {
+                                            self.status_msg = "无法删除默认或活动计划".to_string();
+                                        }
+                                    }
+                                }
+                            });
+                        });
+                    }
+                });
+            });
+
+            ui.add_space(6.0);
+
             // 进程列表
             ui.group(|ui| {
                 ui.horizontal(|ui| {
                     ui.strong("进程列表");
                     ui.add(egui::TextEdit::singleline(&mut self.search_term).hint_text("搜索...").desired_width(150.0));
+                    
+                    // 手动刷新按钮
+                    if ui.button("🔄 刷新").clicked() {
+                        self.refresh_data();
+                        self.status_msg = "进程列表已刷新".to_string();
+                    }
                 });
                 ui.add_space(4.0);
                 
@@ -344,6 +428,12 @@ impl eframe::App for TNLiteApp {
                                         let mut mask: u64 = 0;
                                         for &c in &selected_cores { mask |= 1 << c; }
                                         profile.affinity_mask = Some(mask);
+                                        
+                                        // Save to config whitelist
+                                        let process_profile = ProcessProfile::from_pending(profile);
+                                        self.config.process_profiles.insert(proc_name.clone(), process_profile);
+                                        let _ = self.config.save();
+
                                         let profile_clone = profile.clone();
                                         
                                         tokio::spawn(async move {
@@ -363,7 +453,7 @@ impl eframe::App for TNLiteApp {
                                             let _ = governor::trim_memory(proc_pid).await;
                                         });
                                         
-                                        self.status_msg = format!("已应用策略并清理内存: {}", proc_name);
+                                        self.status_msg = format!("已应用策略并保存到白名单: {}", proc_name);
                                     }
                                     
                                     ui.add_space(8.0);
@@ -481,6 +571,9 @@ impl eframe::App for TNLiteApp {
             self.status_msg = "已最小化到托盘".to_string();
         }
         
-        ctx.request_repaint_after(std::time::Duration::from_millis(200));
+        // Smart Refresh: Low refresh rate when focused, stop when unfocused
+        if ctx.input(|i| i.focused) {
+            ctx.request_repaint_after(std::time::Duration::from_millis(200)); // 5 FPS when focused
+        }
     }
 }
