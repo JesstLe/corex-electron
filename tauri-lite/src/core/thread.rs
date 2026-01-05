@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 #[cfg(windows)]
 use windows::Win32::{
-    Foundation::{CloseHandle, HANDLE},
+    Foundation::CloseHandle,
     System::Diagnostics::ToolHelp::*,
     System::Threading::*,
 };

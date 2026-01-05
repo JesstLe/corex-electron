@@ -4,7 +4,8 @@ mod core;
 
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use sysinfo::System;
 use core::{governor, thread, topology, PriorityLevel, CpuTopology, AppConfig, set_auto_start, PendingProfile, CoreType, LogicalCore};
 
@@ -15,6 +16,8 @@ use tray_icon::Icon;
 // 全局标志：是否请求显示窗口
 static SHOW_WINDOW_FLAG: AtomicBool = AtomicBool::new(false);
 static EXIT_FLAG: AtomicBool = AtomicBool::new(false);
+// 全局 Context 用于从这托盘线程唤醒 UI
+static GUI_CONTEXT: Mutex<Option<egui::Context>> = Mutex::new(None);
 
 #[tokio::main]
 async fn main() -> eframe::Result<()> {
@@ -80,21 +83,28 @@ fn create_tray_icon() -> Option<tray_icon::TrayIcon> {
             if let Ok(event) = receiver.recv() {
                 if event.id == show_id {
                     SHOW_WINDOW_FLAG.store(true, Ordering::SeqCst);
+                    if let Ok(ctx) = GUI_CONTEXT.lock() {
+                        if let Some(ctx) = ctx.as_ref() { ctx.request_repaint(); }
+                    }
                 } else if event.id == quit_id {
                     EXIT_FLAG.store(true, Ordering::SeqCst);
+                    if let Ok(ctx) = GUI_CONTEXT.lock() {
+                        if let Some(ctx) = ctx.as_ref() { ctx.request_repaint(); }
+                    }
                     std::process::exit(0);
                 }
             }
         }
     });
     
-    // 监听托盘图标点击
+    // 监听托盘图标点击 (简化处理：任意事件都显示窗口)
     std::thread::spawn(|| {
         let receiver = tray_icon::TrayIconEvent::receiver();
         loop {
-            if let Ok(event) = receiver.recv() {
-                if matches!(event.click_type, tray_icon::ClickType::Left | tray_icon::ClickType::Double) {
-                    SHOW_WINDOW_FLAG.store(true, Ordering::SeqCst);
+            if let Ok(_event) = receiver.recv() {
+                SHOW_WINDOW_FLAG.store(true, Ordering::SeqCst);
+                if let Ok(ctx) = GUI_CONTEXT.lock() {
+                    if let Some(ctx) = ctx.as_ref() { ctx.request_repaint(); }
                 }
             }
         }
@@ -304,13 +314,28 @@ impl TNLiteApp {
 
 impl eframe::App for TNLiteApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // 保存 Context 到全局，以便托盘线程使用
+        if let Ok(mut g_ctx) = GUI_CONTEXT.lock() {
+            if g_ctx.is_none() {
+                *g_ctx = Some(ctx.clone());
+            }
+        }
+
         // 检查是否需要显示窗口（从托盘恢复）
-        if SHOW_WINDOW_FLAG.swap(false, Ordering::SeqCst) {
+        let should_show = SHOW_WINDOW_FLAG.swap(false, Ordering::SeqCst);
+        if should_show {
             self.is_hidden = false;
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
             ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
         }
+        
+        // 如果处于隐藏状态，保持低频刷新以检查唤醒信号（作为保底）
+        if self.is_hidden {
+            ctx.request_repaint_after(std::time::Duration::from_millis(500));
+        }
+        
+        // 检查是否需要退出
         
         // 检查是否需要退出
         if EXIT_FLAG.load(Ordering::SeqCst) {
@@ -445,10 +470,10 @@ impl eframe::App for TNLiteApp {
                                 ui.add_space(20.0);
                                 
                                 let profile = self.pending_profiles.get(&proc_pid);
-                                let status_text = profile.map(|p| p.summary()).unwrap_or_else(|| "默认".to_string());
+                                let status_text = profile.map(|p: &PendingProfile| p.summary()).unwrap_or_else(|| "默认".to_string());
                                 let status_color = if let Some(p) = profile {
                                     if let Some(level) = &p.priority {
-                                        let (r, g, b) = level.color();
+                                        let (r, g, b): (u8, u8, u8) = level.color();
                                         egui::Color32::from_rgb(r, g, b)
                                     } else if !p.is_empty() {
                                         egui::Color32::from_rgb(180, 140, 60)

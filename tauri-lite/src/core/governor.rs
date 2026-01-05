@@ -7,7 +7,7 @@ use super::types::{AppError, AppResult, PriorityLevel};
 
 #[cfg(windows)]
 use windows::Win32::{
-    Foundation::{CloseHandle, HANDLE},
+    Foundation::CloseHandle,
     System::Threading::*,
     System::ProcessStatus::*,
 };
