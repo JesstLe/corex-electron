@@ -1,176 +1,19 @@
-//! Task NeXus Lite - 原生高性能 CPU 调度工具
-
-mod core;
+//! 应用程序 UI 逻辑
+//! 
+//! 接管原 main.rs 中的 TNLiteApp 结构体及其实现。
 
 use eframe::egui;
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
-use sysinfo::System;
-use core::{governor, thread, topology, PriorityLevel, CpuTopology, AppConfig, set_auto_start, PendingProfile, CoreType, LogicalCore};
+use std::sync::atomic::Ordering;
 
-// 系统托盘相关
-use tray_icon::{TrayIconBuilder, menu::{Menu, MenuItem, PredefinedMenuItem}};
-use tray_icon::Icon;
+use crate::core::{
+    governor, thread, topology,
+    PriorityLevel, CpuTopology, AppConfig, set_auto_start, PendingProfile, LiteProcess,
+    monitor::SystemMonitor
+};
 
-#[cfg(windows)]
-use windows::Win32::UI::WindowsAndMessaging::{FindWindowA, ShowWindow, SetForegroundWindow, SW_RESTORE, SW_SHOW, SW_NORMAL};
-#[cfg(windows)]
-use windows::core::PCSTR;
-
-// 全局标志：是否请求显示窗口
-static SHOW_WINDOW_FLAG: AtomicBool = AtomicBool::new(false);
-static EXIT_FLAG: AtomicBool = AtomicBool::new(false);
-// 全局 Context 用于从这托盘线程唤醒 UI
-static GUI_CONTEXT: Mutex<Option<egui::Context>> = Mutex::new(None);
-
-#[tokio::main]
-async fn main() -> eframe::Result<()> {
-    // 创建系统托盘
-    let _tray = create_tray_icon();
-    
-    let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_inner_size([950.0, 750.0])
-            .with_min_inner_size([750.0, 550.0])
-            .with_icon(load_icon()),
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Task NeXus Lite",
-        options,
-        Box::new(|cc| {
-            // 运行时加载中文字体
-            let mut fonts = egui::FontDefinitions::default();
-            if let Some(font_data) = load_system_font() {
-                fonts.font_data.insert("cjk".to_owned(), egui::FontData::from_owned(font_data));
-                fonts.families.entry(egui::FontFamily::Proportional).or_default().insert(0, "cjk".to_owned());
-                fonts.families.entry(egui::FontFamily::Monospace).or_default().push("cjk".to_owned());
-            }
-            cc.egui_ctx.set_fonts(fonts);
-            
-            let mut style = (*cc.egui_ctx.style()).clone();
-            style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(147, 51, 234);
-            cc.egui_ctx.set_style(style);
-            
-            Box::new(TNLiteApp::new())
-        }),
-    )
-}
-
-/// 创建系统托盘图标
-fn create_tray_icon() -> Option<tray_icon::TrayIcon> {
-    // 加载图标
-    let icon_bytes = include_bytes!("../icon.ico");
-    let icon = if let Ok(icon_dir) = ico::IconDir::read(std::io::Cursor::new(icon_bytes)) {
-        if let Some(entry) = icon_dir.entries().iter().max_by_key(|e| e.width()) {
-            if let Ok(image) = entry.decode() {
-                Icon::from_rgba(image.rgba_data().to_vec(), image.width(), image.height()).ok()
-            } else { None }
-        } else { None }
-    } else { None };
-    
-    // 创建托盘菜单
-    let menu = Menu::new();
-    let show_item = MenuItem::new("显示窗口", true, None);
-    let quit_item = MenuItem::new("退出程序", true, None);
-    let _ = menu.append(&show_item);
-    let _ = menu.append(&PredefinedMenuItem::separator());
-    let _ = menu.append(&quit_item);
-    
-    // 监听菜单事件
-    let show_id = show_item.id().clone();
-    let quit_id = quit_item.id().clone();
-    
-    std::thread::spawn(move || {
-        let receiver = tray_icon::menu::MenuEvent::receiver();
-        loop {
-            if let Ok(event) = receiver.recv() {
-                if event.id == show_id {
-                    SHOW_WINDOW_FLAG.store(true, Ordering::SeqCst);
-                    if let Ok(ctx) = GUI_CONTEXT.lock() {
-                        if let Some(ctx) = ctx.as_ref() { ctx.request_repaint(); }
-                    }
-                } else if event.id == quit_id {
-                    EXIT_FLAG.store(true, Ordering::SeqCst);
-                    if let Ok(ctx) = GUI_CONTEXT.lock() {
-                        if let Some(ctx) = ctx.as_ref() { ctx.request_repaint(); }
-                    }
-                    std::process::exit(0);
-                }
-            }
-        }
-    });
-    
-    // 监听托盘图标点击 (简化处理：任意事件都显示窗口)
-    std::thread::spawn(|| {
-        let receiver = tray_icon::TrayIconEvent::receiver();
-        loop {
-            if let Ok(event) = receiver.recv() {
-                let _ = event.debug_probe_field; // INTENTIONAL ERROR to see fields
-                SHOW_WINDOW_FLAG.store(true, Ordering::SeqCst);
-                if let Ok(ctx) = GUI_CONTEXT.lock() {
-                    if let Some(ctx) = ctx.as_ref() { ctx.request_repaint(); }
-                }
-                
-                #[cfg(windows)]
-                unsafe {
-                    let window_name = "Task NeXus Lite\0";
-                    if let Ok(hwnd) = FindWindowA(None, PCSTR::from_raw(window_name.as_ptr())) {
-                        if !hwnd.0.is_null() {
-                            let _ = ShowWindow(hwnd, SW_SHOW);
-                            let _ = ShowWindow(hwnd, SW_RESTORE);
-                            let _ = SetForegroundWindow(hwnd);
-                        }
-                    }
-                }
-            }
-        }
-    });
-    
-    let builder = TrayIconBuilder::new()
-        .with_menu(Box::new(menu))
-        .with_tooltip("Task NeXus Lite");
-    
-    let builder = if let Some(icon) = icon {
-        builder.with_icon(icon)
-    } else {
-        builder
-    };
-    
-    builder.build().ok()
-}
-
-fn load_icon() -> egui::IconData {
-    let icon_bytes = include_bytes!("../icon.ico");
-    if let Ok(icon_dir) = ico::IconDir::read(std::io::Cursor::new(icon_bytes)) {
-        if let Some(entry) = icon_dir.entries().iter().max_by_key(|e| e.width()) {
-            if let Ok(image) = entry.decode() {
-                return egui::IconData { rgba: image.rgba_data().to_vec(), width: image.width(), height: image.height() };
-            }
-        }
-    }
-    egui::IconData::default()
-}
-
-/// 运行时加载系统中文字体
-fn load_system_font() -> Option<Vec<u8>> {
-    let font_paths = [
-        "C:\\Windows\\Fonts\\msyh.ttc",
-        "C:\\Windows\\Fonts\\simhei.ttf",
-        "C:\\Windows\\Fonts\\simsun.ttc",
-        "C:\\Windows\\Fonts\\msyhbd.ttc",
-        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
-    ];
-    
-    for path in &font_paths {
-        if let Ok(data) = std::fs::read(path) {
-            return Some(data);
-        }
-    }
-    None
-}
+use super::{SHOW_WINDOW_FLAG, EXIT_FLAG, GUI_CONTEXT};
+use super::utils;
 
 /// 默认游戏关键词列表
 fn default_game_keywords() -> Vec<String> {
@@ -218,9 +61,8 @@ fn default_game_keywords() -> Vec<String> {
     ]
 }
 
-
-struct TNLiteApp {
-    sys: System,
+pub struct TNLiteApp {
+    monitor: SystemMonitor,
     selected_cores: HashSet<usize>,
     processes: Vec<LiteProcess>,
     search_term: String,
@@ -235,26 +77,18 @@ struct TNLiteApp {
     is_hidden: bool,
 }
 
-#[derive(Clone)]
-struct LiteProcess {
-    pid: u32,
-    name: String,
-    cpu: f32,
-    mem: u64,
-}
-
 impl TNLiteApp {
-    fn new() -> Self {
-        let mut sys = System::new_all();
-        sys.refresh_all();
+    pub fn new() -> Self {
+        // 使用 SystemMonitor 初始化
+        let monitor = SystemMonitor::new();
+        let cpu_count = monitor.cpu_count();
         
         let topology = topology::get_cpu_topology().ok();
-        let core_count = sys.cpus().len();
         let config = AppConfig::load();
         
         Self {
-            sys,
-            selected_cores: (0..core_count).collect(),
+            monitor,
+            selected_cores: (0..cpu_count).collect(),
             processes: Vec::new(),
             search_term: String::new(),
             last_refresh: std::time::Instant::now(),
@@ -264,69 +98,14 @@ impl TNLiteApp {
             pending_profiles: HashMap::new(),
             minimize_to_tray: true,
             game_keywords: default_game_keywords(),
-            cpu_count: core_count,
+            cpu_count,
             is_hidden: false,
         }
     }
 
     fn refresh_data(&mut self) {
-        self.sys.refresh_cpu_all();
-        self.sys.refresh_processes(sysinfo::ProcessesToUpdate::All);
-        
-        let mut new_procs = Vec::new();
-        let query = self.search_term.to_lowercase();
-        
-        for (pid, process) in self.sys.processes() {
-            let name = process.name().to_string_lossy().to_string();
-            if name.is_empty() { continue; }
-            if !query.is_empty() && !name.to_lowercase().contains(&query) { continue; }
-            new_procs.push(LiteProcess {
-                pid: pid.as_u32(),
-                name,
-                cpu: process.cpu_usage() / self.sys.cpus().len() as f32,
-                mem: process.memory() / 1024 / 1024,
-            });
-        }
-        new_procs.sort_by(|a, b| b.cpu.partial_cmp(&a.cpu).unwrap_or(std::cmp::Ordering::Equal));
-        self.processes = new_procs;
-    }
-    
-    fn get_core_type_color(core_type: &CoreType) -> egui::Color32 {
-        match core_type {
-            CoreType::VCache => egui::Color32::from_rgb(255, 100, 100),
-            CoreType::Performance => egui::Color32::from_rgb(100, 200, 255),
-            CoreType::Efficiency => egui::Color32::from_rgb(100, 255, 100),
-            CoreType::Unknown => egui::Color32::WHITE,
-        }
-    }
-    
-    fn get_core_type_char(core_type: &CoreType) -> &'static str {
-        match core_type {
-            CoreType::VCache => "V",
-            CoreType::Performance => "P",
-            CoreType::Efficiency => "E",
-            CoreType::Unknown => "",
-        }
-    }
-    
-    fn get_grouped_cores(&self) -> (Vec<LogicalCore>, Vec<LogicalCore>) {
-        let mut physical_cores = Vec::new();
-        let mut smt_cores = Vec::new();
-        
-        if let Some(top) = &self.topology {
-            let mut seen_physical: HashSet<usize> = HashSet::new();
-            
-            for core in &top.cores {
-                if !seen_physical.contains(&core.physical_id) {
-                    physical_cores.push(core.clone());
-                    seen_physical.insert(core.physical_id);
-                } else {
-                    smt_cores.push(core.clone());
-                }
-            }
-        }
-        
-        (physical_cores, smt_cores)
+        // 调用 Monitor 模块获取数据，实现 UI 与数据获取解耦
+        self.processes = self.monitor.scan_processes(&self.search_term);
     }
 }
 
@@ -390,23 +169,57 @@ impl eframe::App for TNLiteApp {
                 
                 ui.add_space(6.0);
                 
-                let (physical_cores, smt_cores) = self.get_grouped_cores();
+                // 使用 Topology 模块的方法获取分组
+                let (physical_cores, smt_cores) = if let Some(top) = &self.topology {
+                    top.get_grouped_cores()
+                } else {
+                    (Vec::new(), Vec::new())
+                };
                 
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("物理核心").strong());
                     ui.add_space(10.0);
-                    for core in &physical_cores {
-                        let is_selected = self.selected_cores.contains(&core.id);
-                        let type_color = Self::get_core_type_color(&core.core_type);
-                        let type_char = Self::get_core_type_char(&core.core_type);
-                        let label = format!("{}{}", core.id, type_char);
+                    
+                    let mut current_ccd = 0;
+                    if let Some(top) = &self.topology {
+                        // 如果有 CCD 分组且超过 1 个，则启用分组显示
+                        let has_ccd_groups = top.ccd_groups.len() > 1;
                         
-                        let bg_color = if is_selected { egui::Color32::from_rgb(147, 51, 234) } else { egui::Color32::from_gray(60) };
-                        let button = egui::Button::new(egui::RichText::new(&label).color(type_color).strong())
-                            .fill(bg_color).min_size(egui::vec2(42.0, 36.0)).rounding(4.0);
-                        
-                        if ui.add(button).clicked() {
-                            if is_selected { self.selected_cores.remove(&core.id); } else { self.selected_cores.insert(core.id); }
+                        // 为了快速查找核心所属的 CCD，构建一个映射
+                        // 仅当需要分组显示时才构建
+                        let mut core_ccd_map = HashMap::new();
+                        if has_ccd_groups {
+                            for (ccd_idx, group) in top.ccd_groups.iter().enumerate() {
+                                for &core_id in group {
+                                    core_ccd_map.insert(core_id, ccd_idx);
+                                }
+                            }
+                        }
+
+                        for (idx, core) in physical_cores.iter().enumerate() {
+                            // CCD 分隔逻辑
+                            if has_ccd_groups {
+                                let ccd = *core_ccd_map.get(&core.id).unwrap_or(&0);
+                                if idx > 0 && ccd != current_ccd {
+                                    ui.add_space(10.0);
+                                    ui.separator();
+                                    ui.add_space(10.0);
+                                    current_ccd = ccd;
+                                }
+                            }
+
+                            let is_selected = self.selected_cores.contains(&core.id);
+                            let type_color = utils::get_core_type_color(&core.core_type);
+                            let type_char = utils::get_core_type_char(&core.core_type);
+                            let label = format!("{}{}", core.id, type_char);
+                            
+                            let bg_color = if is_selected { egui::Color32::from_rgb(147, 51, 234) } else { egui::Color32::from_gray(60) };
+                            let button = egui::Button::new(egui::RichText::new(&label).color(type_color).strong())
+                                .fill(bg_color).min_size(egui::vec2(42.0, 36.0)).rounding(4.0);
+                            
+                            if ui.add(button).clicked() {
+                                if is_selected { self.selected_cores.remove(&core.id); } else { self.selected_cores.insert(core.id); }
+                            }
                         }
                     }
                 });
@@ -416,10 +229,39 @@ impl eframe::App for TNLiteApp {
                     ui.horizontal(|ui| {
                         ui.label(egui::RichText::new("SMT超线程").color(egui::Color32::GRAY));
                         ui.add_space(10.0);
-                        for core in &smt_cores {
+                        
+                        let mut current_ccd = 0;
+                        let mut core_ccd_map = HashMap::new();
+                        let has_ccd_groups = if let Some(top) = &self.topology {
+                            if top.ccd_groups.len() > 1 {
+                                for (ccd_idx, group) in top.ccd_groups.iter().enumerate() {
+                                    for &core_id in group {
+                                        core_ccd_map.insert(core_id, ccd_idx);
+                                    }
+                                }
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            false
+                        };
+
+                        for (idx, core) in smt_cores.iter().enumerate() {
+                            // CCD 分隔逻辑 (SMT)
+                            if has_ccd_groups {
+                                let ccd = *core_ccd_map.get(&core.id).unwrap_or(&0);
+                                if idx > 0 && ccd != current_ccd {
+                                    ui.add_space(10.0);
+                                    ui.separator();
+                                    ui.add_space(10.0);
+                                    current_ccd = ccd;
+                                }
+                            }
+
                             let is_selected = self.selected_cores.contains(&core.id);
-                            let type_color = Self::get_core_type_color(&core.core_type);
-                            let type_char = Self::get_core_type_char(&core.core_type);
+                            let type_color = utils::get_core_type_color(&core.core_type);
+                            let type_char = utils::get_core_type_char(&core.core_type);
                             let label = format!("{}{}", core.id, type_char);
                             
                             let bg_color = if is_selected { egui::Color32::from_rgb(120, 40, 180) } else { egui::Color32::from_gray(45) };
@@ -480,7 +322,8 @@ impl eframe::App for TNLiteApp {
                                 ui.add_space(20.0);
                                 
                                 let profile = self.pending_profiles.get(&proc_pid);
-                                let status_text = profile.map(|p: &PendingProfile| p.summary()).unwrap_or_else(|| "默认".to_string());
+                                // 使用 utils 中的 summary 方法
+                                let status_text = profile.map(|p| utils::get_profile_summary(p)).unwrap_or_else(|| "默认".to_string());
                                 let status_color = if let Some(p) = profile {
                                     if let Some(level) = &p.priority {
                                         let (r, g, b): (u8, u8, u8) = level.color();
@@ -546,7 +389,7 @@ impl eframe::App for TNLiteApp {
                                 ui.menu_button("线程绑定", |ui| {
                                     if let Some(top) = &topology {
                                         for core in &top.cores {
-                                            let type_char = Self::get_core_type_char(&core.core_type);
+                                            let type_char = utils::get_core_type_char(&core.core_type);
                                             if ui.button(format!("核心 {}{}", core.id, type_char)).clicked() {
                                                 let profile = self.pending_profiles.entry(proc_pid).or_default();
                                                 profile.thread_bind_core = Some(core.id as u32);
