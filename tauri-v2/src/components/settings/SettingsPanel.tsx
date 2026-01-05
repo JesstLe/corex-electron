@@ -30,10 +30,25 @@ export default function SettingsPanel({
     processes = []
 }: SettingsPanelProps) {
     const [bombStatus, setBombStatus] = React.useState<TimeBombStatus | null>(null);
+    const [backupPath, setBackupPath] = React.useState<string>('');
+    const [backingUp, setBackingUp] = React.useState(false);
 
     React.useEffect(() => {
         invoke<TimeBombStatus>('check_expiration').then(setBombStatus).catch(console.error);
+        invoke<string>('get_backup_path').then(setBackupPath).catch(console.error);
     }, []);
+
+    const handleBackupRegistry = async () => {
+        setBackingUp(true);
+        try {
+            await invoke('create_full_backup');
+            alert('注册表备份成功！');
+        } catch (e) {
+            alert('备份失败: ' + e);
+        } finally {
+            setBackingUp(false);
+        }
+    };
 
     const handleImport = async () => {
         if (!confirm("导入配置将覆盖当前的核心调优设置 (Profiles, SmartTrim, ProBalance 等)，确定继续吗？")) return;
@@ -275,6 +290,34 @@ export default function SettingsPanel({
                 </div>
             </div>
 
+            {/* 注册表备份 */}
+            <div className="glass rounded-2xl p-5 shadow-soft">
+                <h4 className="font-medium text-slate-700 mb-4">注册表备份</h4>
+                <div className="space-y-3">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                        <div className="text-xs text-slate-500 mb-2">备份保存路径：</div>
+                        <div className="text-xs font-mono text-slate-600 break-all bg-white p-2 rounded border border-slate-200">
+                            {backupPath || '加载中...'}
+                        </div>
+                    </div>
+                    <div className="flex gap-3">
+                        <button
+                            onClick={handleBackupRegistry}
+                            disabled={backingUp}
+                            className="flex-1 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all shadow-md active:scale-95 flex items-center justify-center gap-2"
+                        >
+                            {backingUp ? '备份中...' : <React.Fragment><Download size={14} /> 立即备份注册表</React.Fragment>}
+                        </button>
+                        <button
+                            onClick={() => invoke('open_backup_folder')}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-2"
+                        >
+                            <Settings size={14} /> 打开文件夹
+                        </button>
+                    </div>
+                </div>
+            </div>
+
             {/* 系统设置 */}
             <div className="glass rounded-2xl p-5 shadow-soft">
                 <h4 className="font-medium text-slate-700 mb-4">系统设置</h4>
@@ -344,10 +387,13 @@ export default function SettingsPanel({
                         </button>
                     </div>
 
-                    <div className="pt-2 text-center">
-                        <p className="text-xs text-slate-400">
-                            反馈及获取更新群聊：629474892
-                        </p>
+                    <div className="pt-4 text-center">
+                        <div className="p-3 bg-violet-50 rounded-xl border border-violet-100 inline-block">
+                            <p className="text-sm font-bold text-violet-700 flex items-center gap-2 justify-center">
+                                <span>反馈及获取更新群聊：</span>
+                                <span className="text-lg">629474892</span>
+                            </p>
+                        </div>
                     </div>
                 </div>
             </div>

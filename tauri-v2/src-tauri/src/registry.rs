@@ -759,6 +759,12 @@ pub async fn create_full_backup() -> Result<String, String> {
     Ok(filename)
 }
 
+/// Get the absolute path of the backup directory
+#[tauri::command]
+pub async fn get_backup_path() -> Result<String, String> {
+    Ok(get_backup_directory().to_string_lossy().to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

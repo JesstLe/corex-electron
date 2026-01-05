@@ -18,6 +18,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
+mod optimizer;
+
 // ============================================================================
 // Tauri Commands - CPU 信息
 // ============================================================================
@@ -740,6 +742,10 @@ pub fn run() {
             save_full_config,
             check_expiration,
             set_admin_autostart,
+            // Optimizer Commands
+            optimizer::optimize_latency,
+            optimizer::optimize_network,
+            optimizer::optimize_power_gpu,
             // 注册表操作
             task_nexus_lib::registry::backup_registry,
             task_nexus_lib::registry::import_registry,
@@ -752,6 +758,7 @@ pub fn run() {
             task_nexus_lib::registry::delete_backup_by_name,
             task_nexus_lib::registry::check_admin,
             task_nexus_lib::registry::open_backup_folder,
+            task_nexus_lib::registry::get_backup_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

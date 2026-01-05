@@ -68,7 +68,7 @@ export default function ManualOptimizer({ processes, topology, showToast, onScan
                         <Zap size={24} className="text-white" />
                     </div>
                     <div>
-                        <h2 className="text-xl font-bold text-slate-800">手动精密调度</h2>
+                        <h2 className="text-xl font-bold text-slate-800">自定义线程序列调试</h2>
                     </div>
                 </div>
 

@@ -8,6 +8,7 @@ import ManualOptimizer from './components/ManualOptimizer';
 import AdvancedPanel from './components/AdvancedPanel';
 import Toast, { ToastContainer } from './components/Toast';
 import ActivationDialog from './components/ActivationDialog';
+import OneClickOptimizer from './components/OneClickOptimizer';
 import { Activity, Settings, Zap, SlidersHorizontal, AlertOctagon } from 'lucide-react';
 import { getCpuArchitecture } from './data/cpuDatabase';
 import { invoke } from '@tauri-apps/api/core';
@@ -264,7 +265,7 @@ function App() {
             if (result.success) {
                 setStatus('active');
                 const statusMsg = prioritySuccess ? ` | 优先级: ${priority}` : ' (优先级设置失败)';
-                showToast(`已应用到进程 ${selectedPid}${statusMsg}，建议点击清理内存`, 'success', 5000);
+                showToast(`已应用到进程 ${selectedPid}${statusMsg}，必须点击清理内存`, 'success', 5000);
 
                 if (mode === 'dynamic') {
                     await invoke('clear_memory').catch(() => { });
@@ -404,9 +405,12 @@ function App() {
                     <button onClick={() => setActiveTab('settings')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'settings' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                         <Settings size={16} /><span>设置</span>
                     </button>
-                    <button onClick={() => setActiveTab('optimizer')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'optimizer' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
-                        <Zap size={16} /><span>高级调优</span>
+                    <button onClick={() => setActiveTab('one_click')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'one_click' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                        <Zap size={16} /><span>一键优化</span>
                     </button>
+                    {/* <button onClick={() => setActiveTab('optimizer')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'optimizer' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
+                        <SlidersHorizontal size={16} /><span>自定义线程序列调试</span>
+                    </button> */}
                     {/* 暂时隐藏高级选项============================================================================================================== */}
                     {/* <button onClick={() => setActiveTab('advanced')} className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${activeTab === 'advanced' ? 'bg-violet-500 text-white' : 'text-slate-500 hover:bg-slate-100'}`}>
                         <SlidersHorizontal size={16} /><span>高级选项</span>
@@ -458,6 +462,10 @@ function App() {
                             onRemoveProfile={handleRemoveProfile}
                             processes={processes}
                         />
+                    )}
+
+                    {activeTab === 'one_click' && (
+                        <OneClickOptimizer showToast={showToast} />
                     )}
 
                     {activeTab === 'optimizer' && (
