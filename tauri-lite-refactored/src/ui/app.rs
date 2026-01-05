@@ -331,7 +331,9 @@ impl eframe::App for TNLiteApp {
                             };
                             
                             if ui.button(name_text).clicked() {
-                                if power::set_active_plan(&plan.guid).is_ok() {
+                                if let Err(e) = power::set_active_plan(&plan.guid) {
+                                    self.status_msg = format!("切换失败: {}", e);
+                                } else {
                                     self.refresh_power_plans();
                                     self.status_msg = format!("已切换电源计划: {}", plan.name);
                                 }
@@ -351,6 +353,20 @@ impl eframe::App for TNLiteApp {
                             });
                         });
                     }
+                });
+            });
+            
+            ui.add_space(6.0);
+            
+            // 底部反馈区域
+            ui.group(|ui| {
+                ui.horizontal(|ui| {
+                    ui.label("反馈和更新获取请加群：629474892");
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("加入群聊【TN测试群】").clicked() {
+                            let _ = webbrowser::open("https://qm.qq.com/q/oIKs1SQpMs");
+                        }
+                    });
                 });
             });
 

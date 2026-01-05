@@ -29,6 +29,8 @@ rfd = "0.14"
 # System Tray
 tray-icon = "0.14"
 async-trait = "0.1.89"
+encoding_rs = "0.8.35"
+webbrowser = "1.0.6"
 
 # Windows-specific dependencies
 [target.'cfg(windows)'.dependencies]

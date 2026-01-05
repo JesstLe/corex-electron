@@ -18,7 +18,15 @@ pub fn get_power_plans() -> AppResult<Vec<PowerPlan>> {
         .output()
         .map_err(|e| AppError::SystemError(format!("Failed to execute powercfg: {}", e)))?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    // 优先尝试 UTF-8，失败则使用 GBK 解码 (修复中文乱码)
+    let stdout = match String::from_utf8(output.stdout.clone()) {
+        Ok(s) => s,
+        Err(_) => {
+            let (cow, _encoding_used, _had_errors) = encoding_rs::GBK.decode(&output.stdout);
+            cow.into_owned()
+        }
+    };
+    
     let mut plans = Vec::new();
 
     for line in stdout.lines() {
@@ -49,17 +57,25 @@ pub fn get_power_plans() -> AppResult<Vec<PowerPlan>> {
 }
 
 pub fn set_active_plan(guid: &str) -> AppResult<()> {
-    let status = Command::new("powercfg")
+    let output = Command::new("powercfg")
         .arg("/setactive")
         .arg(guid)
         .creation_flags(CREATE_NO_WINDOW)
-        .status()
+        .output()
         .map_err(|e| AppError::SystemError(format!("Failed to execute powercfg: {}", e)))?;
 
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
-        Err(AppError::SystemError(format!("Failed to set active plan: {}", status)))
+        // 解码错误信息，防止乱码
+        let stderr = match String::from_utf8(output.stderr.clone()) {
+            Ok(s) => s,
+            Err(_) => {
+                let (cow, _, _) = encoding_rs::GBK.decode(&output.stderr);
+                cow.into_owned()
+            }
+        };
+        Err(AppError::SystemError(format!("Failed to set active plan: {}", stderr)))
     }
 }
 
