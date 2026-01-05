@@ -1,7 +1,7 @@
 //! UI 辅助工具
 
 use eframe::egui;
-use crate::core::{CoreType, PendingProfile, PriorityLevel};
+use crate::core::{CoreType, PendingProfile, PriorityLevel, CpuTopology};
 
 /// 获取核心类型的显示颜色
 pub fn get_core_type_color(core_type: &CoreType) -> egui::Color32 {
@@ -23,8 +23,18 @@ pub fn get_core_type_char(core_type: &CoreType) -> &'static str {
     }
 }
 
+/// 辅助函数：根据核心 ID 获取类型后缀字符
+fn get_suffix(core_id: u32, topology: Option<&CpuTopology>) -> &'static str {
+    if let Some(top) = topology {
+        if let Some(core) = top.cores.iter().find(|c| c.id == core_id as usize) {
+            return get_core_type_char(&core.core_type);
+        }
+    }
+    ""
+}
+
 /// 获取策略摘要文本
-pub fn get_profile_summary(profile: &PendingProfile) -> String {
+pub fn get_profile_summary(profile: &PendingProfile, topology: Option<&CpuTopology>) -> String {
     if profile.is_empty() {
         return "默认".to_string();
     }
@@ -33,7 +43,10 @@ pub fn get_profile_summary(profile: &PendingProfile) -> String {
         // 生成选定核心编号列表
         let cores: Vec<u32> = (0..64).filter(|i| (mask >> i) & 1 == 1).collect();
         if cores.len() <= 4 {
-            parts.push(format!("核心:{}", cores.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(",")));
+            let core_strs: Vec<String> = cores.iter()
+                .map(|&c| format!("{}{}", c, get_suffix(c, topology)))
+                .collect();
+            parts.push(format!("核心:{}", core_strs.join(",")));
         } else if !cores.is_empty() {
             // 尝试检测连续范围
             let min = *cores.first().unwrap();
@@ -49,7 +62,10 @@ pub fn get_profile_summary(profile: &PendingProfile) -> String {
         parts.push(format!("{}", level.as_str_cn()));
     }
     if let Some(core) = profile.thread_bind_core {
-        parts.push(format!("绑定:{}", core));
+        parts.push(format!("绑定:{}{}", core, get_suffix(core, topology)));
+    }
+    if let Some(core) = profile.ideal_core {
+        parts.push(format!("理想:{}{}", core, get_suffix(core, topology)));
     }
     parts.join(" | ")
 }

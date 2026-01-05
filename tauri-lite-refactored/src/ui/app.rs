@@ -323,7 +323,7 @@ impl eframe::App for TNLiteApp {
                                 
                                 let profile = self.pending_profiles.get(&proc_pid);
                                 // 使用 utils 中的 summary 方法
-                                let status_text = profile.map(|p| utils::get_profile_summary(p)).unwrap_or_else(|| "默认".to_string());
+                                let status_text = profile.map(|p| utils::get_profile_summary(p, self.topology.as_ref())).unwrap_or_else(|| "默认".to_string());
                                 let status_color = if let Some(p) = profile {
                                     if let Some(level) = &p.priority {
                                         let (r, g, b): (u8, u8, u8) = level.color();
@@ -356,9 +356,14 @@ impl eframe::App for TNLiteApp {
                                             if let Some(core) = profile_clone.thread_bind_core {
                                                 let _ = thread::smart_bind_thread(proc_pid, core).await;
                                             }
+                                            if let Some(core) = profile_clone.ideal_core {
+                                                let _ = thread::smart_set_ideal_thread(proc_pid, core).await;
+                                            }
+                                            // 自动触发内存清理
+                                            let _ = governor::trim_memory(proc_pid).await;
                                         });
                                         
-                                        self.status_msg = format!("已应用策略到 {}", proc_name);
+                                        self.status_msg = format!("已应用策略并清理内存: {}", proc_name);
                                     }
                                     
                                     ui.add_space(8.0);
@@ -386,6 +391,24 @@ impl eframe::App for TNLiteApp {
                                     }
                                 });
                                 
+                                ui.menu_button("模式选择", |ui| {
+                                    ui.menu_button("模式1: 第一优先核心", |ui| {
+                                        if let Some(top) = &topology {
+                                            for core in &top.cores {
+                                                let type_char = utils::get_core_type_char(&core.core_type);
+                                                if ui.button(format!("核心 {}{}", core.id, type_char)).clicked() {
+                                                    let profile = self.pending_profiles.entry(proc_pid).or_default();
+                                                    profile.ideal_core = Some(core.id as u32);
+                                                    self.status_msg = format!("已设置 {} 理想核心: 核心{}", proc_name, core.id);
+                                                    ui.close_menu();
+                                                }
+                                            }
+                                        }
+                                    });
+                                    ui.add_enabled(false, egui::Button::new("模式2: (开发中)"));
+                                    ui.add_enabled(false, egui::Button::new("模式3: (开发中)"));
+                                });
+
                                 ui.menu_button("线程绑定", |ui| {
                                     if let Some(top) = &topology {
                                         for core in &top.cores {

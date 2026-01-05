@@ -10,6 +10,7 @@ use windows::Win32::{
     Foundation::CloseHandle,
     System::Threading::*,
     System::ProcessStatus::*,
+    System::Diagnostics::ToolHelp::*,
 };
 
 // ============================================================================
@@ -53,20 +54,58 @@ pub async fn set_priority(_pid: u32, _level: PriorityLevel) -> AppResult<()> {
 // ============================================================================
 
 /// 设置进程 CPU 亲和性 (Hex Mask String)
+/// 注意：为响应用户需求，此处从硬限制 (SetProcessAffinityMask) 改为软限制 (SetThreadIdealProcessor)。
+/// 对于多核选择，采用 Round-Robin 方式将进程的所有线程分散建议到选中的核心上。
 #[cfg(windows)]
 pub async fn set_process_affinity(pid: u32, affinity_mask: String) -> AppResult<()> {
     tokio::task::spawn_blocking(move || {
         let mask = u64::from_str_radix(affinity_mask.trim_start_matches("0x"), 16)
             .map_err(|_| AppError::InvalidAffinityMask(affinity_mask.clone()))?;
         
+        // 解析掩码为核心 ID 列表
+        let mut target_cores = Vec::new();
+        for i in 0..64 {
+            if (mask >> i) & 1 == 1 {
+                target_cores.push(i as u32);
+            }
+        }
+        
+        if target_cores.is_empty() {
+            return Err(AppError::InvalidAffinityMask("Mask is empty".to_string()));
+        }
+
         unsafe {
-            let handle = OpenProcess(PROCESS_SET_INFORMATION | PROCESS_QUERY_INFORMATION, false, pid)
-                .map_err(|e| AppError::SystemError(format!("OpenProcess failed: {}", e)))?;
+            // 获取进程所有线程
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)
+                .map_err(|e| AppError::SystemError(format!("CreateToolhelp32Snapshot failed: {}", e)))?;
             
-            let result = SetProcessAffinityMask(handle, mask as usize);
-            let _ = CloseHandle(handle);
+            let mut entry = THREADENTRY32 {
+                dwSize: std::mem::size_of::<THREADENTRY32>() as u32,
+                ..Default::default()
+            };
             
-            result.map_err(|e| AppError::SystemError(format!("SetProcessAffinityMask failed: {}", e)))
+            if Thread32First(snapshot, &mut entry).is_ok() {
+                let mut core_idx = 0;
+                loop {
+                    if entry.th32OwnerProcessID == pid {
+                        // 对每个线程设置理想处理器 (轮询分配)
+                        let ideal_core = target_cores[core_idx % target_cores.len()];
+                        core_idx += 1;
+                        
+                        if let Ok(handle) = OpenThread(THREAD_SET_INFORMATION, false, entry.th32ThreadID) {
+                            let _ = SetThreadIdealProcessor(handle, ideal_core);
+                            let _ = CloseHandle(handle);
+                        }
+                    }
+                    
+                    entry.dwSize = std::mem::size_of::<THREADENTRY32>() as u32;
+                    if Thread32Next(snapshot, &mut entry).is_err() {
+                        break;
+                    }
+                }
+            }
+            let _ = CloseHandle(snapshot);
+            Ok(())
         }
     })
     .await

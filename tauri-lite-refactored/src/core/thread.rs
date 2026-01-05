@@ -89,6 +89,66 @@ pub async fn smart_bind_thread(pid: u32, target_core: u32) -> AppResult<u32> {
     Ok(heaviest_tid)
 }
 
+/// 设置线程理想处理器 (第一优先核心)
+#[cfg(windows)]
+pub async fn set_thread_ideal_processor(tid: u32, ideal_core: u32) -> AppResult<()> {
+    tokio::task::spawn_blocking(move || {
+        unsafe {
+            let handle = OpenThread(THREAD_SET_INFORMATION | THREAD_QUERY_INFORMATION, false, tid)
+                .map_err(|e| AppError::SystemError(format!("OpenThread failed: {}", e)))?;
+            
+            // SetThreadIdealProcessor 返回前一个理想处理器，失败返回 -1 (但 Win32 API 签名是 u32，失败通常是 INVALID_SET_FILE_POINTER 类似的值，不过 SetThreadIdealProcessor 成功返回前一个值)
+            // 这里我们主要关心调用本身。Win32 API: DWORD SetThreadIdealProcessor(HANDLE hThread, DWORD dwIdealProcessor);
+            let result = SetThreadIdealProcessor(handle, ideal_core);
+            let _ = CloseHandle(handle);
+            
+            if result == u32::MAX {
+                Err(AppError::SystemError("SetThreadIdealProcessor failed".to_string()))
+            } else {
+                Ok(())
+            }
+        }
+    })
+    .await
+    .map_err(|e| AppError::SystemError(e.to_string()))?
+}
+
+/// 智能设置最重线程的理想处理器
+#[cfg(windows)]
+pub async fn smart_set_ideal_thread(pid: u32, ideal_core: u32) -> AppResult<u32> {
+    // 第一次采样
+    let sample1 = get_thread_cpu_times(pid)?;
+    
+    // 等待 100ms
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    
+    // 第二次采样
+    let sample2 = get_thread_cpu_times(pid)?;
+    
+    // 计算增量，找出最重线程
+    let mut max_delta = 0u64;
+    let mut heaviest_tid = 0u32;
+    
+    for (tid, time2) in &sample2 {
+        if let Some(time1) = sample1.get(tid) {
+            let delta = time2.saturating_sub(*time1);
+            if delta > max_delta {
+                max_delta = delta;
+                heaviest_tid = *tid;
+            }
+        }
+    }
+    
+    if heaviest_tid == 0 {
+        return Err(AppError::SystemError("无法识别帧线程 (Delta=0)".to_string()));
+    }
+    
+    // 设置理想核心
+    set_thread_ideal_processor(heaviest_tid, ideal_core).await?;
+    
+    Ok(heaviest_tid)
+}
+
 #[cfg(not(windows))]
 pub async fn smart_bind_thread(_pid: u32, _target_core: u32) -> AppResult<u32> {
     Err(AppError::SystemError("Not supported on this platform".to_string()))
