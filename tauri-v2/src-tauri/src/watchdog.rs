@@ -98,6 +98,15 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
             };
 
             if needs_affinity_fix {
+                // Check cache first to avoid rapid re-application if OS hasn't updated yet
+                let mut cache = LAST_APPLIED_STATE.write();
+                if let Some((last_mask, _)) = cache.get(&p.pid) {
+                    if *last_mask == target_mask && !is_soft {
+                        // Skip if we already tried this exact mask recently
+                        continue;
+                    }
+                }
+
                 tracing::info!("Auto-Apply: Re-applying affinity for {} (PID {}) [Mode: {}]", p.name, p.pid, profile.mode);
                 if is_soft {
                     let mut core_ids = Vec::new();
@@ -110,6 +119,8 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
                 } else {
                     let _ = governor::set_process_affinity(p.pid, profile.affinity.clone()).await;
                 }
+                
+                cache.insert(p.pid, (target_mask, profile.priority.clone()));
                 changed = true;
             }
 
@@ -272,9 +283,20 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
                 let current_mask = if p.cpu_affinity == "All" { u64::MAX } else { u64::from_str_radix(p.cpu_affinity.trim_start_matches("0x"), 16).unwrap_or(0) };
 
                 if current_mask != target_mask {
-                    tracing::info!("DefaultRules: Mapping game {} to {}", p.name, mask);
-                    let _ = governor::set_process_affinity(p.pid, mask.clone()).await;
-                    changed = true;
+                    // Check cache
+                    let mut cache = LAST_APPLIED_STATE.write();
+                    let should_apply = if let Some((last, _)) = cache.get(&p.pid) {
+                        *last != target_mask
+                    } else {
+                        true
+                    };
+
+                    if should_apply {
+                        tracing::info!("DefaultRules: Mapping game {} to {}", p.name, mask);
+                        let _ = governor::set_process_affinity(p.pid, mask.clone()).await;
+                        cache.insert(p.pid, (target_mask, rules.game_priority.clone()));
+                        changed = true;
+                    }
                 }
             }
             if let Some(level) = PriorityLevel::from_str(&rules.game_priority) {
@@ -297,9 +319,20 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
                 if current_mask != target_mask {
                     // 仅对有一定负载或特定优先级的背景进程应用，避免对所有空闲进程操作
                     if p.cpu_usage > 0.1 || p.priority != "Normal" {
-                        tracing::info!("DefaultRules: Mapping system process {} to {}", p.name, mask);
-                        let _ = governor::set_process_affinity(p.pid, mask.clone()).await;
-                        changed = true;
+                        // Check cache
+                        let mut cache = LAST_APPLIED_STATE.write();
+                        let should_apply = if let Some((last, _)) = cache.get(&p.pid) {
+                            *last != target_mask
+                        } else {
+                            true
+                        };
+
+                        if should_apply {
+                            tracing::info!("DefaultRules: Mapping system process {} to {}", p.name, mask);
+                            let _ = governor::set_process_affinity(p.pid, mask.clone()).await;
+                            cache.insert(p.pid, (target_mask, rules.system_priority.clone()));
+                            changed = true;
+                        }
                     }
                 }
             }

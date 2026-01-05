@@ -339,26 +339,11 @@ pub async fn set_affinity(
                 priority_class
             );
 
-            // 智能线程绑定 (如果指定了主核心)
-            // 注意：这是耗时操作 (250ms+)，但为了准确性是值得的
-            if let Some(core) = primary_core {
-                // 只有当主核心在允许的掩码范围内时才执行
-                if (final_mask & (1u64 << core)) != 0 {
-                    tracing::info!("Triggering smart thread binding for PID {} to Core {}", pid, core);
-                    // 异步调用，不阻塞当前线程过久 (但在当前架构下 set_affinity 本身是 spawn_blocking 里的)
-                    // 由于我们在 spawn_blocking 里，直接调用 async 函数需要 runtime handle
-                    // 或者更简单：我们不在这里 await，而是再次 spawn 一个 task? 
-                    // 不，set_affinity 本身是 async 的，但内部包裹了 spawn_blocking。
-                    // 这是一个问题：smart_bind_thread 也是 async (内部 spawn_blocking)。
-                    // 最好的办法是在 set_affinity 的 async 上下文中，await spawn_blocking 结束后，再调用 smart_bind_thread。
-                }
-            }
-
             Ok(())
         }
     })
     .await
-    .map_err(|e| AppError::SystemError(e.to_string()))?;
+    .map_err(|e| AppError::SystemError(e.to_string()))??;
 
     // 在 spawn_blocking 外部执行智能线程绑定
     if let Some(core) = primary_core {

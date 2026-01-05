@@ -41,7 +41,6 @@ fn extract_icon_base64(path: &str) -> AppResult<String> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
-    use windows::Win32::Foundation::*;
     use windows::Win32::Graphics::Gdi::*;
     use windows::Win32::UI::Shell::*;
     use windows::Win32::UI::WindowsAndMessaging::*;

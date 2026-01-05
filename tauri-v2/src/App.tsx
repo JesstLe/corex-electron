@@ -277,7 +277,9 @@ function App() {
 
         try {
             const result = await invoke<any>('add_profile', { profile });
-            setSettings(prev => ({ ...prev, profiles: result }));
+            if (result && result.profiles) {
+                setSettings(prev => ({ ...prev, profiles: result.profiles }));
+            }
             setStatus('active');
             showToast(`策略已保存: ${process.name} `, 'success');
         } catch (err) {
@@ -289,7 +291,9 @@ function App() {
     const handleRemoveProfile = async (name: string) => {
         try {
             const result = await invoke<any>('remove_profile', { name });
-            setSettings(prev => ({ ...prev, profiles: result }));
+            if (result && result.profiles) {
+                setSettings(prev => ({ ...prev, profiles: result.profiles }));
+            }
             showToast(`已删除策略: ${name} `, 'success');
         } catch (err) {
             console.error(err);
