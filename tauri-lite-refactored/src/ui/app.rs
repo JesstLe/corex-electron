@@ -286,76 +286,76 @@ impl eframe::App for TNLiteApp {
 
             ui.add_space(6.0);
 
-            // 电源管理面板
-            ui.group(|ui| {
-                ui.horizontal(|ui| {
-                    ui.strong("电源管理");
-                    if ui.button("刷新").clicked() {
-                        self.refresh_power_plans();
-                        self.status_msg = "电源计划已刷新".to_string();
-                    }
-                });
-                ui.add_space(4.0);
-                
-                ui.horizontal(|ui| {
-                    ui.label("当前计划:");
-                    if let Some(active) = self.power_plans.iter().find(|p| p.is_active) {
-                        ui.label(egui::RichText::new(&active.name).color(egui::Color32::GREEN).strong());
-                    } else {
-                        ui.label("未知");
-                    }
-                    
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("导入计划").clicked() {
-                            if let Some(path) = rfd::FileDialog::new().add_filter("Power Plan", &["pow"]).pick_file() {
-                                if power::import_plan(&path.to_string_lossy()).is_ok() {
-                                    self.refresh_power_plans();
-                                    self.status_msg = "电源计划已导入".to_string();
-                                }
-                            }
-                        }
-                    });
-                });
+            // 电源管理面板 (暂时隐藏)
+            // ui.group(|ui| {
+            //     ui.horizontal(|ui| {
+            //         ui.strong("电源管理");
+            //         if ui.button("刷新").clicked() {
+            //             self.refresh_power_plans();
+            //             self.status_msg = "电源计划已刷新".to_string();
+            //         }
+            //     });
+            //     ui.add_space(4.0);
+            //     
+            //     ui.horizontal(|ui| {
+            //         ui.label("当前计划:");
+            //         if let Some(active) = self.power_plans.iter().find(|p| p.is_active) {
+            //             ui.label(egui::RichText::new(&active.name).color(egui::Color32::GREEN).strong());
+            //         } else {
+            //             ui.label("未知");
+            //         }
+            //         
+            //         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            //             if ui.button("导入计划").clicked() {
+            //                 if let Some(path) = rfd::FileDialog::new().add_filter("Power Plan", &["pow"]).pick_file() {
+            //                     if power::import_plan(&path.to_string_lossy()).is_ok() {
+            //                         self.refresh_power_plans();
+            //                         self.status_msg = "电源计划已导入".to_string();
+            //                     }
+            //                 }
+            //             }
+            //         });
+            //     });
 
-                ui.separator();
+            //     ui.separator();
 
-                egui::ScrollArea::vertical().max_height(100.0).id_source("power_scroll").show(ui, |ui| {
-                    // Clone plans to avoid borrowing self while mutating self
-                    let plans = self.power_plans.clone();
-                    for plan in plans {
-                        ui.horizontal(|ui| {
-                            let name_text = if plan.is_active {
-                                egui::RichText::new(&plan.name).strong().color(egui::Color32::GREEN)
-                            } else {
-                                egui::RichText::new(&plan.name)
-                            };
-                            
-                            if ui.button(name_text).clicked() {
-                                if let Err(e) = power::set_active_plan(&plan.guid) {
-                                    self.status_msg = format!("切换失败: {}", e);
-                                } else {
-                                    self.refresh_power_plans();
-                                    self.status_msg = format!("已切换电源计划: {}", plan.name);
-                                }
-                            }
+            //     egui::ScrollArea::vertical().max_height(100.0).id_source("power_scroll").show(ui, |ui| {
+            //         // Clone plans to avoid borrowing self while mutating self
+            //         let plans = self.power_plans.clone();
+            //         for plan in plans {
+            //             ui.horizontal(|ui| {
+            //                 let name_text = if plan.is_active {
+            //                     egui::RichText::new(&plan.name).strong().color(egui::Color32::GREEN)
+            //                 } else {
+            //                     egui::RichText::new(&plan.name)
+            //                 };
+            //                 
+            //                 if ui.button(name_text).clicked() {
+            //                     if let Err(e) = power::set_active_plan(&plan.guid) {
+            //                         self.status_msg = format!("切换失败: {}", e);
+            //                     } else {
+            //                         self.refresh_power_plans();
+            //                         self.status_msg = format!("已切换电源计划: {}", plan.name);
+            //                     }
+            //                 }
 
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if !plan.is_active {
-                                    if ui.small_button("🗑").on_hover_text("删除").clicked() {
-                                        if power::delete_plan(&plan.guid).is_ok() {
-                                            self.refresh_power_plans();
-                                            self.status_msg = format!("已删除电源计划: {}", plan.name);
-                                        } else {
-                                            self.status_msg = "无法删除默认或活动计划".to_string();
-                                        }
-                                    }
-                                }
-                            });
-                        });
-                    }
-                });
-            });
-            
+            //                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            //                     if !plan.is_active {
+            //                         if ui.small_button("🗑").on_hover_text("删除").clicked() {
+            //                             if power::delete_plan(&plan.guid).is_ok() {
+            //                                 self.refresh_power_plans();
+            //                                 self.status_msg = format!("已删除电源计划: {}", plan.name);
+            //                             } else {
+            //                                 self.status_msg = "无法删除默认或活动计划".to_string();
+            //                             }
+            //                         }
+            //                     }
+            //                 });
+            //             });
+            //         }
+            //     });
+            // });
+
             ui.add_space(6.0);
             
             // 底部反馈区域

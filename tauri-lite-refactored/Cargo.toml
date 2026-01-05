@@ -52,3 +52,6 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+[build-dependencies]
+winres = "0.1.12"
