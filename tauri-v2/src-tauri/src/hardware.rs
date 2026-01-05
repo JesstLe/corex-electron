@@ -23,6 +23,7 @@ static CPU_MONITOR_RUNNING: AtomicBool = AtomicBool::new(false);
 /// 获取基本 CPU 信息
 pub async fn get_cpu_info() -> AppResult<serde_json::Value> {
     use sysinfo::System;
+    use std::collections::HashSet;
 
     tokio::task::spawn_blocking(|| {
         let mut sys = System::new();
@@ -33,24 +34,48 @@ pub async fn get_cpu_info() -> AppResult<serde_json::Value> {
             return Err(AppError::SystemError("无法检测到 CPU 信息".to_string()));
         }
 
-        let model = cpus[0].brand().to_string();
-        let cores = cpus.len();
+        let model_raw = cpus[0].brand().to_string();
+        let logical_cores = cpus.len();
         let speed = cpus[0].frequency();
 
         // 清理型号名称
-        let model = model
+        let model = model_raw
             .replace("(R)", "")
             .replace("(TM)", "")
             .replace(" CPU ", " ")
             .split('@')
             .next()
-            .unwrap_or(&model)
+            .unwrap_or(&model_raw)
             .trim()
             .to_string();
 
+        // 检测厂商
+        let vendor = if model_raw.to_lowercase().contains("intel") {
+            "Intel"
+        } else if model_raw.to_lowercase().contains("amd") || model_raw.to_lowercase().contains("ryzen") {
+            "AMD"
+        } else {
+            "Unknown"
+        };
+
+        // 获取物理核心数 (使用 hardware_topology 精确计算)
+        let physical_cores = match crate::hardware_topology::get_cpu_topology() {
+            Ok(topo) => {
+                // 统计不同的 physical_id 数量
+                let unique_physical_ids: HashSet<usize> = topo.iter().map(|c| c.physical_id).collect();
+                unique_physical_ids.len()
+            }
+            Err(_) => {
+                // 兜底方案：假设超线程，物理核心 = 逻辑核心 / 2
+                logical_cores / 2
+            }
+        };
+
         Ok(serde_json::json!({
             "model": model,
-            "cores": cores,
+            "vendor": vendor,
+            "logical_cores": logical_cores,
+            "physical_cores": physical_cores,
             "speed": speed
         }))
     })
