@@ -1,6 +1,10 @@
 export interface CpuInfo {
     model: string;
+    vendor?: string;
     cores: number;
+    logical_cores?: number;
+    physical_cores?: number;
+    speed?: number;
 }
 
 export interface CpuArch {

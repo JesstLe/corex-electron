@@ -61,7 +61,7 @@ export default function ControlBar({
                 </div>
                 {cpuInfo && (
                     <span className="text-xs text-slate-400 hidden sm:inline">
-                        {cpuInfo.cores} 核心 · {cpuInfo.model}
+                        {cpuInfo.physical_cores || cpuInfo.cores} 核心 {cpuInfo.cores} 线程 · {cpuInfo.model}
                     </span>
                 )}
             </div>

@@ -74,9 +74,10 @@ pub async fn get_cpu_info() -> AppResult<serde_json::Value> {
         Ok(serde_json::json!({
             "model": model,
             "vendor": vendor,
+            "cores": logical_cores, // Backward compatibility with frontend
             "logical_cores": logical_cores,
             "physical_cores": physical_cores,
-            "speed": speed
+            "speed": speed,
         }))
     })
     .await
@@ -123,53 +124,70 @@ pub async fn detect_cpu_topology() -> AppResult<CpuTopology> {
             is_hybrid: false,
         };
 
-        // Intel 混合架构检测
-        if vendor == CpuVendor::Intel {
-            if let Some((p_cores, e_cores)) = detect_intel_hybrid(&model) {
-                // SAFETY CHECK: Verify detected topology matches actual core count
-                // P-Cores have hyperthreading (2 threads each), E-Cores have 1 thread each
-                let expected_threads = (p_cores * 2) + e_cores;
-                
-                // Only apply hybrid configuration if it matches actual core count (or is close)
-                // Allow 10% tolerance for edge cases
-                let tolerance = (expected_threads as f32 * 0.1).ceil() as u32;
-                if expected_threads <= logical_cores + tolerance && expected_threads + tolerance >= logical_cores {
-                    topology.p_cores = Some(p_cores);
-                    topology.e_cores = Some(e_cores);
-                    topology.is_hybrid = e_cores > 0;
+        // ========================================================
+        // 统一检测：使用 hardware_topology (Win32 API) 动态检测
+        // 不再依赖 CPU 型号字符串匹配
+        // ========================================================
+        if let Ok(topo) = crate::hardware_topology::get_cpu_topology() {
+            use crate::hardware_topology::CoreType;
+            use std::collections::HashSet;
 
-                    // 计算掩码
-                    // P-Core 在前，每个 P-Core 有 2 个线程
-                    let p_threads = p_cores * 2;
-                    // Clamp p_threads to not exceed logical_cores
-                    let p_threads_clamped = p_threads.min(logical_cores);
-                    topology.p_core_mask = (1u64 << p_threads_clamped) - 1;
-                    topology.e_core_mask = ((1u64 << logical_cores) - 1) ^ topology.p_core_mask;
-                } else {
-                    // Mismatch detected (wrong model lookup?) - use safe defaults
-                    tracing::warn!(
-                        "CPU topology mismatch: detected {}P+{}E={}T but actual is {}T. Using safe fallback.",
-                        p_cores, e_cores, expected_threads, logical_cores
-                    );
-                    // is_hybrid stays false, masks stay 0 - safe fallback
+            // 统计各类型核心数
+            let p_count = topo.iter().filter(|c| c.core_type == CoreType::Performance || c.core_type == CoreType::VCache).count() as u32;
+            let e_count = topo.iter().filter(|c| c.core_type == CoreType::Efficiency).count() as u32;
+            let vcache_count = topo.iter().filter(|c| c.core_type == CoreType::VCache).count() as u32;
+
+            // 精确计算物理核心数
+            let unique_physical_ids: HashSet<usize> = topo.iter().map(|c| c.physical_id).collect();
+            topology.physical_cores = unique_physical_ids.len() as u32;
+
+            // Intel Hybrid 检测
+            if vendor == CpuVendor::Intel && e_count > 0 {
+                topology.is_hybrid = true;
+                topology.p_cores = Some(p_count);
+                topology.e_cores = Some(e_count);
+
+                // 计算 P-Core 掩码 (从 topology 中提取实际的逻辑核心 ID)
+                let mut p_mask: u64 = 0;
+                let mut e_mask: u64 = 0;
+                for core in &topo {
+                    if core.core_type == CoreType::Performance {
+                        p_mask |= 1u64 << core.id;
+                    } else if core.core_type == CoreType::Efficiency {
+                        e_mask |= 1u64 << core.id;
+                    }
                 }
+                topology.p_core_mask = p_mask;
+                topology.e_core_mask = e_mask;
             }
+
+            // AMD V-Cache 检测
+            if vendor == CpuVendor::AMD && vcache_count > 0 {
+                topology.has_3d_cache = true;
+                // CCD 检测：统计不同的 group_id
+                let unique_groups: HashSet<u32> = topo.iter().map(|c| c.group_id).collect();
+                topology.ccds = Some(unique_groups.len() as u32);
+
+                // 计算 VCache 核心掩码 (作为 p_core_mask)
+                let mut vcache_mask: u64 = 0;
+                let mut freq_mask: u64 = 0;
+                for core in &topo {
+                    if core.core_type == CoreType::VCache {
+                        vcache_mask |= 1u64 << core.id;
+                    } else {
+                        freq_mask |= 1u64 << core.id;
+                    }
+                }
+                topology.p_core_mask = vcache_mask; // VCache 核心优先
+                topology.e_core_mask = freq_mask;  // 频率核心
+            }
+        } else {
+            // 动态检测失败 - 使用安全回退 (所有核心视为 Performance)
+            tracing::warn!("Dynamic CPU topology detection failed. Using safe fallback.");
         }
 
-        // AMD CCD 和 X3D 检测
-        if vendor == CpuVendor::AMD {
-            topology.has_3d_cache = model.to_uppercase().contains("X3D");
-
-            if let Some(ccds) = detect_amd_ccds(&model, logical_cores) {
-                topology.ccds = Some(ccds);
-                if ccds == 2 {
-                    // 双 CCD: 前半部分是 CCD0
-                    let half = logical_cores / 2;
-                    topology.p_core_mask = (1u64 << half) - 1;
-                    topology.e_core_mask = ((1u64 << logical_cores) - 1) ^ topology.p_core_mask;
-                }
-            }
-        }
+        // Note: Legacy AMD CCD string-matching removed.
+        // All detection is now handled by hardware_topology Win32 API above.
 
         Ok(topology)
     })
