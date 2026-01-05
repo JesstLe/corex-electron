@@ -47,6 +47,18 @@ function App() {
         setToasts(prev => prev.filter(toast => toast.id !== id));
     };
 
+    const refreshSettings = async () => {
+        try {
+            const savedSettings = await invoke<AppSettings>('get_settings');
+            setSettings(savedSettings || {});
+            if (savedSettings?.mode) {
+                setMode(savedSettings.mode);
+            }
+        } catch (err) {
+            console.error('刷新设置失败:', err);
+        }
+    };
+
     useEffect(() => {
         async function init() {
             setLoading(true);
@@ -352,6 +364,7 @@ function App() {
                                 mode={mode}
                                 setMode={setMode}
                                 settings={settings}
+                                onRefreshSettings={refreshSettings}
                             />
                             <CoreGrid
                                 cores={cores}

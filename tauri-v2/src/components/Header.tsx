@@ -32,7 +32,7 @@ export default function Header({ cpuModel }: HeaderProps) {
     const handleClose = () => invoke('window_close');
 
     return (
-        <div className="flex items-center justify-between px-6 py-4 drag bg-white/50 backdrop-blur-md border-b border-slate-200/50">
+        <div className="flex items-center justify-between pl-6 pr-0 py-0 drag bg-white/50 backdrop-blur-md border-b border-slate-200/50 h-14">
             <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-gradient-to-br from-violet-500 to-pink-500 flex items-center justify-center shadow-glow">
                     <span className="text-white font-bold text-xs tracking-tight">TN</span>
@@ -49,25 +49,24 @@ export default function Header({ cpuModel }: HeaderProps) {
                 </span>
             </div>
 
-            <div className="flex items-center gap-1 no-drag relative z-50">
+            <div className="flex items-center no-drag h-full">
                 <button
                     onClick={handleMinimize}
-                    className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all flex items-center justify-center"
+                    className="w-12 h-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/80 transition-all flex items-center justify-center"
                 >
-                    <Minus size={14} />
+                    <Minus size={16} />
                 </button>
                 <button
                     onClick={handleToggleMaximize}
-                    className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all flex items-center justify-center"
+                    className="w-12 h-full text-slate-400 hover:text-slate-600 hover:bg-slate-100/80 transition-all flex items-center justify-center"
                 >
-                    {isMaximized ? <Copy size={12} /> : <Square size={12} />}
+                    {isMaximized ? <Copy size={14} /> : <Square size={14} />}
                 </button>
                 <button
                     onClick={handleClose}
-                    className="w-8 h-8 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all inline-flex items-center justify-center"
-                    style={{ lineHeight: 0 }}
+                    className="w-12 h-full text-slate-400 hover:text-white hover:bg-red-500 transition-all flex items-center justify-center"
                 >
-                    <X size={14} />
+                    <X size={18} />
                 </button>
             </div>
         </div>

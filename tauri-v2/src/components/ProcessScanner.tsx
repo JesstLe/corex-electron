@@ -50,6 +50,7 @@ interface ProcessScannerProps {
     mode: string;
     setMode: (mode: string) => void;
     settings: AppSettings;
+    onRefreshSettings: () => void;
 }
 
 export default function ProcessScanner({
@@ -62,7 +63,8 @@ export default function ProcessScanner({
     showToast,
     mode,
     setMode,
-    settings
+    settings,
+    onRefreshSettings
 }: ProcessScannerProps) {
     // Modular Logic Hooks
     const {
@@ -241,7 +243,26 @@ export default function ProcessScanner({
         }
 
         try {
-            await invoke<any>(command, args);
+            const result = await invoke<any>(command, args);
+
+            if (command === 'bind_heaviest_thread') {
+                const process = processes.find(p => p.pid === args.pid);
+                if (process) {
+                    const profile = {
+                        name: process.name,
+                        affinity: process.cpu_affinity?.startsWith('0x') ? process.cpu_affinity.slice(2) : "FFFFFFFFFFFFFFFF",
+                        mode: process.cpu_affinity?.startsWith('Sets') ? 'soft' : 'hard',
+                        priority: process.priority || 'Normal',
+                        primaryCore: args.targetCore, // Save the selected core as primary
+                        enabled: true,
+                        timestamp: Date.now()
+                    };
+                    await invoke('add_profile', { profile }).catch(e => console.error("Auto-save thread bind failed:", e));
+                    onRefreshSettings();
+                }
+                showToast(`线程 ${result} 已锁定到核心 ${args.targetCore}`, 'success');
+                return;
+            }
 
             if (command === 'set_process_priority') {
                 const process = args.process || processes.find(p => p.pid === args.pid);
@@ -251,11 +272,12 @@ export default function ProcessScanner({
                         affinity: process.cpu_affinity?.startsWith('0x') ? process.cpu_affinity.slice(2) : "FFFFFFFFFFFFFFFF",
                         mode: process.cpu_affinity?.startsWith('Sets') ? 'soft' : 'hard',
                         priority: args.priority,
-                        primary_core: null,
+                        primaryCore: null,
                         enabled: true,
                         timestamp: Date.now()
                     };
                     await invoke('add_profile', { profile }).catch(e => console.error("Auto-save priority failed:", e));
+                    onRefreshSettings();
                 }
             }
 
@@ -365,9 +387,10 @@ export default function ProcessScanner({
                 {affinityModal.visible && (
                     <SmartAffinitySelector
                         topology={topology}
-                        currentAffinity={affinityModal.process?.cpu_affinity || 'All'}
-                        initialCpuSets={affinityModal.process?.initialCpuSets}
-                        onApply={handleAffinityApply}
+                        currentAffinity={affinityModal.process.cpu_affinity}
+                        initialCpuSets={affinityModal.process.initialCpuSets}
+                        primaryCore={settings.profiles?.find(p => p.name === affinityModal.process.name)?.primaryCore}
+                        onApply={(mask, mode, coreIds) => handleAffinityApply(mask, mode, coreIds)}
                         onClose={() => setAffinityModal({ visible: false, process: null })}
                     />
                 )}
@@ -376,7 +399,10 @@ export default function ProcessScanner({
                     isOpen={isGeekEditorOpen}
                     onClose={() => setIsGeekEditorOpen(false)}
                     settings={settings}
-                    onSave={() => window.location.reload()}
+                    onSave={() => {
+                        onRefreshSettings();
+                        showToast('配置已保存并重载', 'success');
+                    }}
                 />
             </div>
         </div>

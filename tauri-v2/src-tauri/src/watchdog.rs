@@ -14,6 +14,11 @@ static RESTRAINED_PIDS: Lazy<RwLock<HashSet<u32>>> = Lazy::new(|| RwLock::new(Ha
 static LAST_TRIM_TIME: Lazy<RwLock<std::time::Instant>> =
     Lazy::new(|| RwLock::new(std::time::Instant::now() - std::time::Duration::from_secs(3600)));
 
+/// Cache to store the last applied state per process to avoid redundant WinAPI calls.
+/// PID -> (AffinityMask, PriorityString)
+static LAST_APPLIED_STATE: Lazy<RwLock<std::collections::HashMap<u32, (u64, String)>>> =
+    Lazy::new(|| RwLock::new(std::collections::HashMap::new()));
+
 pub async fn check_and_trim_memory() {
     let config = config::get_config().await.unwrap_or_default();
     let trim_config = config.smart_trim;
@@ -54,64 +59,62 @@ pub async fn enforce_profiles(processes: &[ProcessInfo]) {
         return;
     }
 
+    // Use a budget to limit heavy operations per tick
+    let mut operation_budget = 5;
+
     for p in processes {
+        if operation_budget == 0 { break; }
+
         let name_lower = p.name.to_lowercase();
-        // Find a matching profile (case-insensitive)
         if let Some(profile) = profiles.iter().find(|pr| pr.name.to_lowercase() == name_lower && pr.enabled) {
-            
+            let mut changed = false;
+
             // 1. Check Priority
             if p.priority != profile.priority {
                 if let Some(level) = PriorityLevel::from_str(&profile.priority) {
                     tracing::info!("Auto-Apply: Adjusting priority for {} (PID {}) to {}", p.name, p.pid, profile.priority);
                     let _ = governor::set_priority(p.pid, level).await;
+                    changed = true;
                 }
             }
 
             // 2. Check Affinity/Sets
-            // This is harder to check perfectly because p.cpu_affinity is a formatted string.
-            // But if it's different enough, we re-apply.
-            // For now, let's look at the mode.
             let is_soft = profile.mode == "soft";
+            let target_mask = u64::from_str_radix(&profile.affinity, 16).unwrap_or(0);
+            
+            // Normalize current affinity for comparison
+            let current_mask = if p.cpu_affinity == "All" {
+                u64::MAX // Simplification
+            } else if p.cpu_affinity.starts_with("0x") {
+                u64::from_str_radix(&p.cpu_affinity[2..], 16).unwrap_or(0)
+            } else {
+                u64::from_str_radix(&p.cpu_affinity, 16).unwrap_or(0)
+            };
 
-            // If profile is soft but current is not reported as "Sets: ..." 
-            // OR if profile is hard but current doesn't match hex
             let needs_affinity_fix = if is_soft {
                 !p.cpu_affinity.starts_with("Sets")
             } else {
-                // Hard affinity
-                let target_val = u64::from_str_radix(&profile.affinity, 16).unwrap_or(0);
-                let target_hex = format!("{:#x}", target_val);
-                p.cpu_affinity != target_hex && p.cpu_affinity != "All"
+                current_mask != target_mask
             };
 
             if needs_affinity_fix {
                 tracing::info!("Auto-Apply: Re-applying affinity for {} (PID {}) [Mode: {}]", p.name, p.pid, profile.mode);
                 if is_soft {
-                    // Convert affinity string (core indices) back to Vec<u32>
-                    // Note: In my Auto-Save implementation, I saved maskString to affinity.
-                    // We need to be consistent. 
-                    // Actually, let's check how handleAffinityApply saved it.
-                    // It saved maskString.
-                    
-                    // For Sets, it's better to store core_ids. 
-                    // But our struct has a single `affinity: String`.
-                    // Let's assume for 'soft' mode, we might need a parser.
-                    
-                    // Actually, I'll just use the set_process_affinity for both if I can, 
-                    // but Sets needs the cpu_sets module.
-                    
-                    if let Ok(mask) = u64::from_str_radix(&profile.affinity, 16) {
-                        let mut core_ids = Vec::new();
-                        for i in 0..64 {
-                            if (mask & (1 << i)) != 0 {
-                                core_ids.push(i as u32);
-                            }
+                    let mut core_ids = Vec::new();
+                    for i in 0..64 {
+                        if (target_mask & (1 << i)) != 0 {
+                            core_ids.push(i as u32);
                         }
-                        let _ = crate::cpu_sets::set_process_cpu_sets(p.pid, core_ids);
                     }
+                    let _ = crate::cpu_sets::set_process_cpu_sets(p.pid, core_ids);
                 } else {
                     let _ = governor::set_process_affinity(p.pid, profile.affinity.clone()).await;
                 }
+                changed = true;
+            }
+
+            if changed {
+                operation_budget -= 1;
             }
         }
     }
@@ -245,7 +248,11 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
     let profiles = config::get_profiles().await.unwrap_or_default();
     let game_list: Vec<String> = config.game_list.iter().map(|s| s.to_lowercase()).collect();
 
+    let mut operation_budget = 5;
+
     for p in processes {
+        if operation_budget == 0 { break; }
+        
         let name_lower = p.name.to_lowercase();
 
         // 1. 跳过已经有特定 Profile 的进程
@@ -255,19 +262,25 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
 
         // 2. 判定是否在游戏列表中
         let is_game = game_list.iter().any(|g| name_lower.contains(g));
+        let mut changed = false;
 
         // 3. 应用规则
         if is_game {
             // 应用游戏规则 (P-Core/CCD0)
             if let Some(mask) = &rules.game_mask {
-                if p.cpu_affinity != *mask && p.cpu_affinity != format!("{:#x}", u64::from_str_radix(mask, 16).unwrap_or(0)) {
+                let target_mask = u64::from_str_radix(mask, 16).unwrap_or(0);
+                let current_mask = if p.cpu_affinity == "All" { u64::MAX } else { u64::from_str_radix(p.cpu_affinity.trim_start_matches("0x"), 16).unwrap_or(0) };
+
+                if current_mask != target_mask {
                     tracing::info!("DefaultRules: Mapping game {} to {}", p.name, mask);
                     let _ = governor::set_process_affinity(p.pid, mask.clone()).await;
+                    changed = true;
                 }
             }
             if let Some(level) = PriorityLevel::from_str(&rules.game_priority) {
                 if p.priority != rules.game_priority {
                     let _ = governor::set_priority(p.pid, level).await;
+                    changed = true;
                 }
             }
         } else {
@@ -278,18 +291,28 @@ pub async fn apply_default_rules(processes: &[ProcessInfo]) {
             }
 
             if let Some(mask) = &rules.system_mask {
-                if p.cpu_affinity != *mask && p.cpu_affinity != format!("{:#x}", u64::from_str_radix(mask, 16).unwrap_or(0)) {
+                let target_mask = u64::from_str_radix(mask, 16).unwrap_or(0);
+                let current_mask = if p.cpu_affinity == "All" { u64::MAX } else { u64::from_str_radix(p.cpu_affinity.trim_start_matches("0x"), 16).unwrap_or(0) };
+
+                if current_mask != target_mask {
                     // 仅对有一定负载或特定优先级的背景进程应用，避免对所有空闲进程操作
                     if p.cpu_usage > 0.1 || p.priority != "Normal" {
+                        tracing::info!("DefaultRules: Mapping system process {} to {}", p.name, mask);
                         let _ = governor::set_process_affinity(p.pid, mask.clone()).await;
+                        changed = true;
                     }
                 }
             }
             if let Some(level) = PriorityLevel::from_str(&rules.system_priority) {
                 if p.priority != rules.system_priority {
                     let _ = governor::set_priority(p.pid, level).await;
+                    changed = true;
                 }
             }
+        }
+
+        if changed {
+            operation_budget -= 1;
         }
     }
 }

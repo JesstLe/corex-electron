@@ -445,7 +445,19 @@ pub fn run() {
     let monitor = std::sync::Arc::new(task_nexus_lib::monitor::ProcessMonitor::new());
     let monitor_clone = monitor.clone();
 
+    // 便携版静默补全 WebView2 环境
+    #[cfg(feature = "portable")]
+    webview2_setup::ensure_installed();
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            let _ = app
+                .get_webview_window("main")
+                .map(|w| {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                });
+        }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(move |app| {
@@ -467,15 +479,7 @@ pub fn run() {
                 hardware::start_cpu_monitor(app_handle).await;
             });
 
-            // 启动时最小化到托盘
-            if let Ok(cfg) = config::get_config_sync() {
-                if cfg.start_minimized {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.hide();
-                        tracing::info!("Window hidden on startup (start_minimized enabled)");
-                    }
-                }
-            }
+          
 
             // 设置托盘菜单
             let show_i = MenuItem::with_id(app, "show", "显示主界面", true, None::<&str>)?;
@@ -606,4 +610,100 @@ pub fn run() {
 
 fn main() {
     run();
+}
+
+// ============================================================================
+// 便携版 WebView2 自动补全 (静默无感)
+// ============================================================================
+#[cfg(feature = "portable")]
+mod webview2_setup {
+    use std::os::windows::process::CommandExt;
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Com::Urlmon::URLDownloadToFileW;
+
+    pub fn ensure_installed() {
+        if is_webview2_installed() {
+            return;
+        }
+
+        tracing::info!("WebView2 Runtime not found. Starting insensible background installation...");
+        
+        let temp_dir = std::env::temp_dir();
+        let setup_exe = temp_dir.join("MicrosoftEdgeWebview2Setup.exe");
+        let url = "https://go.microsoft.com/fwlink/p/?LinkId=2124703";
+
+        // 1. 下载引导程序 (利用 URLDownloadToFileW 零依赖下载)
+        let url_u16: Vec<u16> = url.encode_utf16().chain(Some(0)).collect();
+        let path_u16: Vec<u16> = setup_exe.to_string_lossy().encode_utf16().chain(Some(0)).collect();
+
+        unsafe {
+            let hr = URLDownloadToFileW(
+                None,
+                PCWSTR(url_u16.as_ptr()),
+                PCWSTR(path_u16.as_ptr()),
+                0,
+                None,
+            );
+            if hr.is_err() {
+                tracing::error!("Failed to download WebView2 bootstrapper: {:?}", hr);
+                return;
+            }
+        }
+
+        // 2. 静默无窗口安装
+        // /silent /install - 官方静默安装参数
+        // CREATE_NO_WINDOW = 0x08000000 - 确保不弹出黑框
+        let status = std::process::Command::new(&setup_exe)
+            .arg("/silent")
+            .arg("/install")
+            .creation_flags(0x08000000)
+            .status();
+
+        match status {
+            Ok(s) if s.success() => tracing::info!("WebView2 installation triggered successfully."),
+            Ok(s) => tracing::warn!("WebView2 installer exited with status: {}", s),
+            Err(e) => tracing::error!("Failed to execute WebView2 installer: {}", e),
+        }
+        
+        // 预留几秒让引导程序启动下载流程
+        std::thread::sleep(std::time::Duration::from_secs(3));
+    }
+
+    use winreg::enums::*;
+    use winreg::RegKey;
+
+    fn is_webview2_installed() -> bool {
+        // 1. 我们需要检查的根键：既要看 HKLM (系统级)，也要看 HKCU (用户级)
+        let roots = [HKEY_LOCAL_MACHINE, HKEY_CURRENT_USER];
+        
+        // 2. WebView2 的 GUID (官方固定)
+        let client_guid = "{F3C4FE00-EFD5-4014-9D3F-683F3F51DDAE}";
+        
+        // 3. 需要探测的相对路径 (包括 WOW6432Node 以防万一)
+        // 注意：HKCU 下通常没有 WOW6432Node，但为了代码简洁统一遍历也没坏处
+        let sub_paths = [
+            format!(r"SOFTWARE\Microsoft\EdgeUpdate\Clients\{}", client_guid),
+            format!(r"SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{}", client_guid),
+        ];
+
+        for root in roots {
+            let root_key = RegKey::predef(root);
+            
+            for path in &sub_paths {
+                // 尝试打开 Key
+                if let Ok(key) = root_key.open_subkey(path) {
+                    // 读取 pv (Product Version)
+                    if let Ok(pv) = key.get_value::<String, _>("pv") {
+                        // 核心校验逻辑
+                        if !pv.is_empty() && pv != "0.0.0.0" {
+                            // 可选：你可以在这里打印 pv 看看具体版本，如 "119.0.2151.58"
+                            return true; 
+                        }
+                    }
+                }
+            }
+        }
+
+        false
+    }
 }
